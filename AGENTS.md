@@ -40,6 +40,16 @@ voice-spell-rpg/
 - Unity EditorにDockerを使わない (DockerはCloud Runのみ)
 - Firebase Auth / Docker はMVP後
 
+## Git運用ルール
+
+- main へ直接 push しない
+- 作業は feature branch で行う
+- merge 前に最低1人レビュー
+- force push 禁止
+- AI generated commit は内容確認後に commit
+- hot.md / index.md を壊さない
+- 大規模 rename は事前共有
+
 ## 技術スタック (確定)
 
 | レイヤー | 技術 |
