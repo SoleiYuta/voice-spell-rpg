@@ -1,0 +1,42 @@
+# Unity
+unity/Library/
+unity/Temp/
+unity/Obj/
+unity/Build/
+unity/Builds/
+unity/Logs/
+unity/UserSettings/
+unity/.vs/
+unity/*.csproj
+unity/*.sln
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Obsidian personal state
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/graph.json
+.obsidian/workspaces.json
+.obsidian/plugins/*/data.json
+
+# AI temporary workspace
+wiki/100_AI_WORKSPACE/tmp/
+wiki/100_AI_WORKSPACE/scratch/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+backend/.env
+
+# Local secrets
+.env
+.env.local
+*.pem
+*.key
