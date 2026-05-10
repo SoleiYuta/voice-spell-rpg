@@ -9,6 +9,17 @@ unity/UserSettings/
 unity/.vs/
 unity/*.csproj
 unity/*.sln
+unity/*.slnx
+
+# Unity projects accidentally created inside the project root
+unity/**/Library/
+unity/**/Temp/
+unity/**/Obj/
+unity/**/Build/
+unity/**/Builds/
+unity/**/Logs/
+unity/**/UserSettings/
+unity/VoiceSpellRPG/
 
 # IDE
 .vscode/
