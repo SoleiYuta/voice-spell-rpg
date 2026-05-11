@@ -1,6 +1,30 @@
 from fastapi import FastAPI, File, Form, UploadFile
+from google.cloud import speech
+from rapidfuzz import fuzz
 
 app = FastAPI()
+stt_client = speech.SpeechClient()
+
+
+def transcribe(wav_bytes: bytes) -> tuple[str, float]:
+    audio = speech.RecognitionAudio(content=wav_bytes)
+    config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=16000,
+        language_code="ja-JP",
+        enable_word_time_offsets=True,
+    )
+    response = stt_client.recognize(config=config, audio=audio)
+    if not response.results:
+        return "", 0.0
+    result = response.results[0].alternatives[0]
+    return result.transcript, result.confidence
+
+
+def calc_match_rate(spell_text: str, transcript: str) -> float:
+    if not spell_text or not transcript:
+        return 0.0
+    return fuzz.ratio(spell_text, transcript) / 100.0
 
 
 @app.post("/evaluate")
@@ -10,15 +34,19 @@ async def evaluate(
     session_id: str = Form(""),
     floor_id: str = Form(""),
 ):
-    # Phase 2: mock response (STT/librosa added in Phase 3+)
+    wav_bytes = await audio_file.read()
+    transcript, confidence = transcribe(wav_bytes)
+    match_rate = calc_match_rate(spell_text, transcript)
+    spell_power = round(0.5 + match_rate * 1.0, 2)
+
     return {
-        "transcript": "闇よ、我が右手に宿れ！",
-        "match_rate": 0.87,
-        "volume": "loud",
-        "speed_wpm": 180.5,
-        "completion_rate": 1.0,
-        "hesitation_count": 1,
-        "confidence": 0.92,
-        "gm_comment": "大声が得意だな！だが速さはまだまだだ。",
-        "spell_power": 1.42,
+        "transcript": transcript,
+        "match_rate": round(match_rate, 2),
+        "volume": "normal",
+        "speed_wpm": 0.0,
+        "completion_rate": min(len(transcript) / max(len(spell_text), 1), 1.0),
+        "hesitation_count": 0,
+        "confidence": round(confidence, 2),
+        "gm_comment": "詠唱を受け取った。",
+        "spell_power": spell_power,
     }
