@@ -1,3 +1,6 @@
+import io
+import numpy as np
+import librosa
 from fastapi import FastAPI, File, Form, UploadFile
 from google.cloud import speech
 from rapidfuzz import fuzz
@@ -25,6 +28,42 @@ def calc_match_rate(spell_text: str, transcript: str) -> float:
     return fuzz.ratio(spell_text, transcript) / 100.0
 
 
+def analyze_audio(wav_bytes: bytes) -> dict:
+    y, sr = librosa.load(io.BytesIO(wav_bytes), sr=16000, mono=True)
+
+    # 無音区間を除いた発話部分を抽出
+    intervals = librosa.effects.split(y, top_db=30)
+    if len(intervals) == 0:
+        return {"volume": "quiet", "speed_wpm": 0.0, "hesitation_count": 0}
+
+    speech_samples = np.concatenate([y[s:e] for s, e in intervals])
+    speech_duration_sec = len(speech_samples) / sr
+
+    # 音量（RMS）
+    rms = float(np.sqrt(np.mean(speech_samples ** 2)))
+    if rms > 0.05:
+        volume = "loud"
+    elif rms > 0.01:
+        volume = "normal"
+    else:
+        volume = "quiet"
+
+    # 詰まり回数（無音区間の数 - 1）
+    hesitation_count = max(0, len(intervals) - 1)
+
+    # 速度は後でSTT word_time_offsets から計算（今は0）
+    return {
+        "volume": volume,
+        "speed_wpm": round(60.0 / speech_duration_sec, 1) if speech_duration_sec > 0 else 0.0,
+        "hesitation_count": hesitation_count,
+    }
+
+
+def calc_spell_power(match_rate: float, volume: str, completion_rate: float) -> float:
+    volume_factor = {"loud": 1.3, "normal": 1.0, "quiet": 0.8}.get(volume, 1.0)
+    return round((0.5 + match_rate) * volume_factor * completion_rate, 2)
+
+
 @app.post("/evaluate")
 async def evaluate(
     audio_file: UploadFile = File(...),
@@ -33,22 +72,19 @@ async def evaluate(
     floor_id: str = Form(""),
 ):
     wav_bytes = await audio_file.read()
-    # 録音内容を保存して確認用
-    with open("/tmp/debug.wav", "wb") as f:
-        f.write(wav_bytes)
-    print(f"[DEBUG] wav_bytes size: {len(wav_bytes)}, spell_text: {spell_text!r}")
     transcript, confidence = transcribe(wav_bytes)
-    print(f"[DEBUG] transcript: {transcript!r}, confidence: {confidence}")
     match_rate = calc_match_rate(spell_text, transcript)
-    spell_power = round(0.5 + match_rate * 1.0, 2)
+    audio = analyze_audio(wav_bytes)
+    completion_rate = round(min(len(transcript) / max(len(spell_text), 1), 1.0), 2)
+    spell_power = calc_spell_power(match_rate, audio["volume"], completion_rate)
 
     return {
         "transcript": transcript,
         "match_rate": round(match_rate, 2),
-        "volume": "normal",
-        "speed_wpm": 0.0,
-        "completion_rate": min(len(transcript) / max(len(spell_text), 1), 1.0),
-        "hesitation_count": 0,
+        "volume": audio["volume"],
+        "speed_wpm": audio["speed_wpm"],
+        "completion_rate": completion_rate,
+        "hesitation_count": audio["hesitation_count"],
         "confidence": round(confidence, 2),
         "gm_comment": "詠唱を受け取った。",
         "spell_power": spell_power,
