@@ -26,6 +26,7 @@ public class SpellCaster : MonoBehaviour
         EvaluationResult result = null;
         client.Evaluate(wavBytes, spellText, r => result = r);
         yield return new WaitUntil(() => result != null);
+        Debug.Log($"transcript: {result.transcript} / match_rate: {result.match_rate} / spell_power: {result.spell_power}");
         OnEvaluationComplete?.Invoke(result);
     }
 }

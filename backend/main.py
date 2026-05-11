@@ -9,8 +9,6 @@ stt_client = speech.SpeechClient()
 def transcribe(wav_bytes: bytes) -> tuple[str, float]:
     audio = speech.RecognitionAudio(content=wav_bytes)
     config = speech.RecognitionConfig(
-        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=16000,
         language_code="ja-JP",
         enable_word_time_offsets=True,
     )
@@ -35,7 +33,12 @@ async def evaluate(
     floor_id: str = Form(""),
 ):
     wav_bytes = await audio_file.read()
+    # 録音内容を保存して確認用
+    with open("/tmp/debug.wav", "wb") as f:
+        f.write(wav_bytes)
+    print(f"[DEBUG] wav_bytes size: {len(wav_bytes)}, spell_text: {spell_text!r}")
     transcript, confidence = transcribe(wav_bytes)
+    print(f"[DEBUG] transcript: {transcript!r}, confidence: {confidence}")
     match_rate = calc_match_rate(spell_text, transcript)
     spell_power = round(0.5 + match_rate * 1.0, 2)
 
