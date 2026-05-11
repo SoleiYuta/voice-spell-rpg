@@ -1,12 +1,15 @@
 import io
+import os
 import numpy as np
 import librosa
 from fastapi import FastAPI, File, Form, UploadFile
 from google.cloud import speech
+from google import genai
 from rapidfuzz import fuzz
 
 app = FastAPI()
 stt_client = speech.SpeechClient()
+gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 
 def transcribe(wav_bytes: bytes) -> tuple[str, float]:
@@ -59,6 +62,21 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     }
 
 
+def generate_gm_comment(transcript: str, match_rate: float, volume: str, spell_power: float) -> str:
+    prompt = f"""あなたは古代魔導書に宿る皮肉屋の精霊です。
+プレイヤーの詠唱結果を見て、一言コメントしてください。
+- 認識テキスト: {transcript}
+- 一致率: {match_rate:.0%}
+- 音量: {volume}
+- 詠唱威力: {spell_power}
+日本語50文字以内で、褒め・煽り・挑発を混ぜた口調で。"""
+    response = gemini_client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+    )
+    return response.text.strip()
+
+
 def calc_spell_power(match_rate: float, volume: str, completion_rate: float) -> float:
     volume_factor = {"loud": 1.3, "normal": 1.0, "quiet": 0.8}.get(volume, 1.0)
     return round((0.5 + match_rate) * volume_factor * completion_rate, 2)
@@ -86,6 +104,6 @@ async def evaluate(
         "completion_rate": completion_rate,
         "hesitation_count": audio["hesitation_count"],
         "confidence": round(confidence, 2),
-        "gm_comment": "詠唱を受け取った。",
+        "gm_comment": generate_gm_comment(transcript, match_rate, audio["volume"], spell_power),
         "spell_power": spell_power,
     }
