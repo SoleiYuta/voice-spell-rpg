@@ -13,7 +13,7 @@ related:
 
 # Wiki Index
 
-**Project codename: AI Grimoire (仮)** | Last updated: 2026-05-10
+**Project codename: AI Grimoire (仮)** | Last updated: 2026-06-15
 
 > 初めて来た人は [[TEAM_START_HERE]] から読んでください。
 
@@ -34,7 +34,7 @@ Navigation: [[TEAM_START_HERE]] | [[hot]] | [[log]]
 
 ## AI Grimoire (仮) — ハッカソンプロジェクト
 
-現在フェーズ: **フェーズ1 着手 (録音 → WAV変換)** | フェーズ0完了 ✅ (2026-05-11)
+現在フェーズ: **コア機能拡張 (適応型AIゲームマスター化)** | フェーズ0〜5 実装済み ✅ | デモ目標 2026-07-12
 実装導線: [[TEAM_START_HERE]] → [[hot]] → 以下のページを順に読む
 
 ### 実装必読ノート (優先順)
@@ -57,6 +57,7 @@ Navigation: [[TEAM_START_HERE]] | [[hot]] | [[log]]
 - [[AI-Grimoire/06_MVP開発計画]] — 縦切りMVP・5フェーズ優先順序
 - [[AI-Grimoire/07_発表デモ構成]] — 60秒デモタイムライン・30秒ピッチ
 - [[AI-Grimoire/08_リスクと対策]] — 5リスク+緩和策・リスクマトリクス
+- [[AI-Grimoire/09_役割分担_WBS_ガント]] — **5人の担当・WBS・ガント (〜7/12)**
 
 ### 技術調査
 
