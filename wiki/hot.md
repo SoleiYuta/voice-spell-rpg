@@ -1,68 +1,71 @@
 ---
 type: meta
 title: "Hot Cache"
-updated: 2026-05-11
+updated: 2026-06-15
 tags: [meta, hot-cache]
 ---
 
-# 現在フェーズ: フェーズ1 — 録音 → WAV変換
+# 現在フェーズ: コア機能拡張 — 適応型AIゲームマスター化
 
-**状態**: フェーズ0完了 (2026-05-11) → フェーズ1着手
+**状態**: フェーズ0〜5 実装済み（録音→WAV→FastAPI→STT→librosa→Geminiコメント）
+→ 残り約4週間（〜2026-07-12）で「目当てのゲーム（適応型AIゲームマスター）」を完成させる段階。
+
+詳細計画・担当・ガント: [[AI-Grimoire/09_役割分担_WBS_ガント]]
 
 ---
 
 ## フェーズ進捗
 
 - [x] フェーズ0: Mock完結 ✅ (ブランチ: `feature/phase0-mock`)
-- [ ] フェーズ1: 録音 → WAV変換 ← **今ここ**
-- [ ] フェーズ2: WAV → FastAPIローカル
-- [ ] フェーズ3: STT接続
-- [ ] フェーズ4: librosa音響評価
-- [ ] フェーズ5: Gemini gm_comment
-- [ ] フェーズ6: Cloud Runデプロイ
+- [x] フェーズ1: 録音 → WAV変換 ✅
+- [x] フェーズ2: WAV → FastAPIローカル ✅
+- [x] フェーズ3: STT接続 ✅
+- [x] フェーズ4: librosa音響評価 ✅
+- [x] フェーズ5: Gemini gm_comment ✅
+- [ ] フェーズ6: Cloud Runデプロイ ← **インフラ着手**
+- [ ] **コア拡張: `/generate-spell`（AI呪文生成）← 最優先・デモの核**
+- [ ] コア拡張: `/result`（リザルト総評）・TTS読み上げ・2フロア進行
+
+> ⚠️ 現状は `/evaluate` だけ＝AIが「評価してコメントする」のみ。
+> 「適応して呪文を出題する」がまだ無く、コンセプトの主役（AIゲームマスター）が未成立。
 
 ---
 
-## フェーズ0で確定した実装方針（変更禁止）
+## 役割分担（確定版）
+
+| # | 役割 | 担当者 |
+|---|---|---|
+| 1 | PM／リーダー／統合 | satoryudev |
+| 2 | Unity見た目・演出 | mutsukichi・蒸し焼き・harukichi |
+| 3 | Unity↔APIつなぎ | mutsukichi・蒸し焼き |
+| 4 | バックエンドAI（Gemini） | satoryudev |
+| 5 | インフラ／デプロイ | koukichi（実質オーナー）・satoryudev |
+
+各自の作業内容は [[AI-Grimoire/09_役割分担_WBS_ガント]] のWBSを参照。
+
+---
+
+## 実装方針（変更禁止）
 
 - DI: VContainer **未使用**。`SerializeField` + Inspector配線で代替（VContainerはMVP後に検討）
 - Coroutine のみ使用（UniTask は未インストール）
-- `EvaluationResult` フィールドは snake_case 厳守
-- `ApiConfig.useMock = true` のままコミット
-- スクリプト配置: `Assets/Scripts/{Api,Config,Data,Game,UI}/`
+- `EvaluationResult` フィールドは snake_case 厳守（追加する SpellData/ResultData も同様）
+- スクリプト配置: `Assets/Scripts/{Api,Config,Data,Game,UI,Util}/`
+- Cloud Run URL・APIキーは環境変数／Secret管理（ハードコード禁止）
 
 ---
 
-## 今やること（フェーズ1）
+## 今週やること（W1: 6/15-6/21 → マイルストーンM1）
 
-```
-[ボタン押下] → [Microphone.Start()] → [ボタン離す] → [AudioClip→WAV変換] → [SpellCaster.CastSpell(wavBytes)]
-```
+**ゴール: AIが呪文を出題 → プレイヤーが詠唱できる（コアループ片側）**
 
-### 作るファイル
-
-| ファイル | 場所 | 役割 |
-|---|---|---|
-| `MicrophoneRecorder.cs` | `Scripts/Game/` | Microphone.Start/Stop・AudioClip保持 |
-| `WavConverter.cs` | `Scripts/Util/` | AudioClip → byte[] (WAV) 変換ユーティリティ |
-| `RecordingButton.cs` | 既存を更新 | 押下で録音開始・離したら変換してCastSpell |
-
-### 実装手順
-
-1. `WavConverter.cs` を作る（静的メソッド `ToWav(AudioClip) → byte[]`）
-2. `MicrophoneRecorder.cs` を作る
-   - `StartRecording()` → `Microphone.Start(null, false, 15, 16000)`
-   - `StopRecording()` → `Microphone.End(null)` → AudioClip を返す
-3. `RecordingButton.cs` を更新
-   - `OnPointerDown` → `MicrophoneRecorder.StartRecording()`
-   - `OnPointerUp` → `StopRecording()` → `WavConverter.ToWav()` → `SpellCaster.CastSpell(wavBytes)`
-
-### 注意点
-
-- Unity の録音サンプルレートは 16000 Hz 固定で取る（FastAPI側でリサンプル不要にする）
-- WAV変換は自前実装（Unity標準にはない）
-- `Microphone` クラスは Editor では動作するが WebGL では制限あり（今は気にしない）
-- フェーズ1終了時点でも `useMock = true` のまま（WAVバイト列はMockに渡るが無視される）
+| 担当 | タスク |
+|---|---|
+| satoryudev | `/generate-spell` 実装（Gemini呪文生成）／`speed_wpm`修正 |
+| koukichi | 現状の `/evaluate` を Cloud Run に本番デプロイ |
+| mutsukichi | `SpellData` データクラス追加 ＋ generate-spell 呼び出し |
+| 蒸し焼き | リザルト画面UIの骨組み |
+| harukichi | リザルト画面UI（蒸し焼きと分担） |
 
 ---
 
@@ -70,9 +73,9 @@ tags: [meta, hot-cache]
 
 - DOTS/ECS 一切使わない
 - Coroutine と UniTask を混在させない
-- EvaluationResult のフィールドを camelCase にしない（snake_case 必須）
-- `useMock = false` でコミットしない
-- Firebase Auth / Docker は MVP後
+- EvaluationResult / SpellData / ResultData のフィールドを camelCase にしない（snake_case 必須）
+- `useMock = false` で安易にコミットしない（Real結合テスト時のみ・戻す）
+- Cloud Run URL・APIキーをコードに直書きしない
 
 ---
 
@@ -80,11 +83,10 @@ tags: [meta, hot-cache]
 
 | 項目 | 内容 |
 |---|---|
-| Unity担当 | フェーズ1（録音実装）|
-| FastAPI担当 | フェーズ2に向けて `/evaluate` エンドポイントのモック実装を先行可 |
-| 今詰まっている箇所 | なし |
-| 次に実装するもの | `WavConverter.cs` + `MicrophoneRecorder.cs` |
+| 今詰まっている箇所 | なし（インフラ＝GCPが今後の山） |
+| 次に実装するもの | `/generate-spell`（satoryudev）＋ Cloud Runデプロイ（koukichi） |
+| クリティカルパス | generate-spell → フロア進行 → E2E結合 → リハ |
 
 ---
 
-*詳細: [[TEAM_START_HERE]] | [[index]] | [[AI-Grimoire/06_MVP開発計画]] | [[AI-Grimoire/tech/API設計]]*
+*詳細: [[TEAM_START_HERE]] | [[index]] | [[AI-Grimoire/09_役割分担_WBS_ガント]] | [[AI-Grimoire/06_MVP開発計画]] | [[AI-Grimoire/tech/API設計]]*

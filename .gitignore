@@ -51,3 +51,4 @@ backend/.env
 .env.local
 *.pem
 *.key
+google-cloud-cli-darwin-arm.tar.gz
