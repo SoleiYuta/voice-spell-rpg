@@ -1,9 +1,9 @@
 # voice-spell-rpg: Agent Instructions
 
-codename: AI Grimoire (仮) | 正式タイトル未定
+codename: AI Grimoire (仮)
 
-音声で呪文を唱えて戦う2Dダンジョン探索ゲーム。
-AIゲームマスターがプレイヤーの声を評価し、戦闘をリアルタイムで変化させる。
+声で呪文を詠唱し、**AIゲームマスター（Gemini）がプレイヤーの声を評価して戦闘をリアルタイムに変化させる**音声ゲーム。
+**フロントは Unity → Web (Next.js) にピボット済み**。バックエンド（FastAPI on Cloud Run）は流用する。
 
 ---
 
@@ -11,54 +11,42 @@ AIゲームマスターがプレイヤーの声を評価し、戦闘をリアル
 
 ```
 voice-spell-rpg/
-├── wiki/AI-Grimoire/   設計・仕様ドキュメント
-├── unity/              Unityプロジェクト (未作成)
-└── backend/            FastAPIバックエンド (未作成)
+├── frontend/   Next.jsフロント（ゲーム本体）← AI実装の主戦場
+├── backend/    FastAPI（STT/librosa/Gemini/TTS, Cloud Run）
+├── wiki/       設計・仕様ドキュメント
+└── unity/      旧クライアント（非推奨・削除予定。参照も実装もしない）
 ```
+
+各ディレクトリの `AGENTS.md`（`frontend/`, `backend/`）も必ず読むこと。
 
 ## 実装前に必ず読む
 
-- `wiki/AI-Grimoire/Unity責務分割` — スクリプト役割・DI設定
-- `wiki/AI-Grimoire/SpellResultデータ構造` — フィールド名厳守 (snake_case)
-- `wiki/AI-Grimoire/MockApiClient運用` — Mock切替手順
-- `wiki/AI-Grimoire/tech/API設計` — エンドポイント仕様
+- `wiki/AI-Grimoire/10_Web設計書` ← **着手の起点**（フォルダ構造・画面遷移・API契約・担当割り当て）
+- `wiki/AI-Grimoire/09_役割分担_WBS_ガント` ← 誰が何を担当するか
+- `wiki/AI-Grimoire/tech/API設計` ← エンドポイント仕様
 
-## 現在フェーズ
+## 全体ルール（厳守）
 
-フェーズ0: Mock完結 (録音なし・固定レスポンス)
+- **APIのフィールドは snake_case 厳守**（TypeScriptの型もPythonも。camelCaseに変換しない）
+- **秘密情報（APIキー/URL）をコードに直書きしない**。環境変数 / Secret で管理
+- `unity/` は触らない（非推奨・削除予定）。DOTS/ECS等のUnity話も無関係
+- 提出物：公開GitHub・**動作するデプロイURL**・Proto Pedia（〆切 **2026-07-10**）
 
-```
-[ボタン押下] → [MockApiClient] → [固定EvaluationResult] → [UI表示] → [敵HP減少]
-```
+## Git運用
 
-## 禁止事項
+- **デフォルトブランチ = `develop`**。作業は feature branch を切り、PRは `develop` 宛て
+- 完成版を `develop` → `main` へPRで反映
+- `main` へ直push / force push しない。`hot.md` / `index.md` を壊さない
+- AI生成のコミットは内容確認後にコミット
 
-- DOTS/ECS を使わない
-- Coroutine と UniTask を混在させない
-- EvaluationResult フィールドを camelCase にしない (snake_case 必須)
-- `useMock = false` でコミットしない (フェーズ0終了まで)
-- Unity EditorにDockerを使わない (DockerはCloud Runのみ)
-- Firebase Auth / Docker はMVP後
-
-## Git運用ルール
-
-- main へ直接 push しない
-- 作業は feature branch で行う
-- merge 前に最低1人レビュー
-- force push 禁止
-- AI generated commit は内容確認後に commit
-- hot.md / index.md を壊さない
-- 大規模 rename は事前共有
-
-## 技術スタック (確定)
+## 技術スタック（確定）
 
 | レイヤー | 技術 |
 |---|---|
-| クライアント | Unity + C# |
+| フロント | Next.js (App Router) + TypeScript |
 | バックエンド | FastAPI + Python (Cloud Run) |
-| AI モデル | Gemini 2.5 Flash |
-| 音声認識 | Speech-to-Text v2 (ja-JP, latest_short) |
+| AI | Gemini 2.5 Flash（**Vertex AI** 経由） |
+| 音声認識 | Speech-to-Text (ja-JP) |
+| 音声合成 | Text-to-Speech |
 | DB | Firestore |
 | CI/CD | GitHub Actions |
-
-詳細: `wiki/AI-Grimoire/tech/採用技術まとめ`

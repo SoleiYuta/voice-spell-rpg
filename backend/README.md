@@ -1,25 +1,20 @@
 # backend/
 
-FastAPI バックエンドディレクトリ。**現在未作成。**
+FastAPI バックエンドディレクトリ。**実装済み**（`/evaluate` 稼働）。
 
-フェーズ2 (WAV → FastAPI ローカル) 以降に配置する。
+AI向けの指示・タスク・規約は `AGENTS.md` を参照（Claude Code/Codexはこれを自動で読む）。
 
-## 配置予定構造
+## 現状の構成
 
 ```
 backend/
-├── main.py               FastAPI エントリポイント
-├── routers/
-│   ├── evaluate.py       POST /evaluate
-│   ├── generate_spell.py POST /generate-spell
-│   ├── master_judge.py   POST /master-judge
-│   └── result.py         GET /result/{session_id}
-├── models/               Pydantic スキーマ
-├── services/             STT / Gemini / Firestore クライアント
+├── main.py            FastAPI 本体（/evaluate 実装済み: STT+librosa+Gemini）
 ├── requirements.txt
-├── Dockerfile            Cloud Run デプロイ用 (フェーズ6以降)
-└── .env.example          APIキーテンプレート (.env は .gitignore済み)
+├── Dockerfile         Cloud Run デプロイ用
+└── AGENTS.md          AI向け指示（タスク・規約）
 ```
+
+未実装（これから）：`/generate-spell`・`/result`・webm→WAV変換・CORS・Firestore。詳細は `AGENTS.md`。
 
 ## ローカル開発
 
