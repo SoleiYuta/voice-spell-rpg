@@ -1,5 +1,8 @@
+import asyncio
 import io
+import logging
 import os
+import time
 import numpy as np
 import librosa
 from fastapi import FastAPI, File, Form, UploadFile
@@ -7,9 +10,16 @@ from google.cloud import speech
 from google import genai
 from rapidfuzz import fuzz
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 stt_client = speech.SpeechClient()
-gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+gemini_client = genai.Client(
+    vertexai=True,
+    project="voicespellrpg",
+    location="asia-northeast1",
+)
 
 
 def transcribe(wav_bytes: bytes) -> tuple[str, float]:
@@ -70,11 +80,15 @@ def generate_gm_comment(transcript: str, match_rate: float, volume: str, spell_p
 - 音量: {volume}
 - 詠唱威力: {spell_power}
 日本語50文字以内で、褒め・煽り・挑発を混ぜた口調で。"""
-    response = gemini_client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-    return response.text.strip()
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
+        return response.text.strip()
+    except Exception as e:
+        logger.warning(f"Gemini error: {e}")
+        return "魔導書が沈黙している……"
 
 
 def calc_spell_power(match_rate: float, volume: str, completion_rate: float) -> float:
@@ -89,12 +103,27 @@ async def evaluate(
     session_id: str = Form(""),
     floor_id: str = Form(""),
 ):
+    t0 = time.time()
     wav_bytes = await audio_file.read()
-    transcript, confidence = transcribe(wav_bytes)
+    logger.info(f"[timing] read={time.time()-t0:.2f}s")
+
+    loop = asyncio.get_event_loop()
+    t1 = time.time()
+    (transcript, confidence), audio = await asyncio.gather(
+        loop.run_in_executor(None, lambda: transcribe(wav_bytes)),
+        loop.run_in_executor(None, lambda: analyze_audio(wav_bytes)),
+    )
+    logger.info(f"[timing] stt+librosa={time.time()-t1:.2f}s")
+
     match_rate = calc_match_rate(spell_text, transcript)
-    audio = analyze_audio(wav_bytes)
     completion_rate = round(min(len(transcript) / max(len(spell_text), 1), 1.0), 2)
     spell_power = calc_spell_power(match_rate, audio["volume"], completion_rate)
+
+    t2 = time.time()
+    gm_comment = await loop.run_in_executor(
+        None, lambda: generate_gm_comment(transcript, match_rate, audio["volume"], spell_power)
+    )
+    logger.info(f"[timing] gemini={time.time()-t2:.2f}s total={time.time()-t0:.2f}s")
 
     return {
         "transcript": transcript,
@@ -104,6 +133,6 @@ async def evaluate(
         "completion_rate": completion_rate,
         "hesitation_count": audio["hesitation_count"],
         "confidence": round(confidence, 2),
-        "gm_comment": generate_gm_comment(transcript, match_rate, audio["volume"], spell_power),
+        "gm_comment": gm_comment,
         "spell_power": spell_power,
     }
