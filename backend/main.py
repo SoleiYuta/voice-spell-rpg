@@ -8,6 +8,7 @@ from typing import Optional
 
 import numpy as np
 import librosa
+from pydub import AudioSegment
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -65,6 +66,17 @@ class SpellData(BaseModel):
     difficulty: int
     spell_type: str
     expected_length_sec: float
+
+
+def to_wav_16k_mono(raw: bytes) -> bytes:
+    """ブラウザ録音(webm/opus 等)を STT/librosa が確実に扱える WAV(16kHz/mono/16bit)へ変換。
+    フロントは MediaRecorder の既定(webm/opus)で送ってくるため、ここで正規化する。
+    """
+    seg = AudioSegment.from_file(io.BytesIO(raw))
+    seg = seg.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+    out = io.BytesIO()
+    seg.export(out, format="wav")
+    return out.getvalue()
 
 
 def transcribe(wav_bytes: bytes) -> tuple[str, float]:
@@ -149,10 +161,15 @@ async def evaluate(
     floor_id: str = Form(""),
 ):
     t0 = time.time()
-    wav_bytes = await audio_file.read()
-    logger.info(f"[timing] read={time.time()-t0:.2f}s")
-
+    raw = await audio_file.read()
     loop = asyncio.get_event_loop()
+    try:
+        wav_bytes = await loop.run_in_executor(None, lambda: to_wav_16k_mono(raw))
+    except Exception as e:
+        logger.warning(f"transcode failed ({e}); raw bytes をそのまま使用")
+        wav_bytes = raw
+    logger.info(f"[timing] read+transcode={time.time()-t0:.2f}s")
+
     t1 = time.time()
     (transcript, confidence), audio = await asyncio.gather(
         loop.run_in_executor(None, lambda: transcribe(wav_bytes)),
