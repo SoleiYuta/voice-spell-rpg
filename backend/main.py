@@ -9,6 +9,7 @@ from typing import Optional
 import numpy as np
 import librosa
 from fastapi import FastAPI, File, Form, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google.cloud import speech
 from google import genai
@@ -19,6 +20,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# CORS: フロント（ブラウザ）から直接叩けるようにする。
+# MVPは全オリジン許可。本番でフロントのドメインが決まったら絞る。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 stt_client = speech.SpeechClient()
 gemini_client = genai.Client(
     vertexai=True,
