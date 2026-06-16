@@ -46,7 +46,7 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 
 | マイルストーン | 完了/全体 | 状態 |
 |---|---|---|
-| W1: AIが呪文出題→詠唱可 (〜6/21) | 3/8 | 🔵 進行中 |
+| W1: AIが呪文出題→詠唱可 (〜6/21) | 4/8 | 🔵 進行中 |
 | W2: 縦切りデモ動作 (〜6/28) | 1/11 | ⬜ 未着手 |
 | W3: Real全結合・機能凍結 (〜7/5) | 1/3 | ⬜ 未着手 |
 | W4: リハ完了・提出 (〜7/12) | 0/3 | ⬜ 未着手 |
@@ -56,7 +56,6 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 - #10 [BE] speed_wpm修正(word_time_offsets) — @satoryudev
 - #19 [FE] lib/types.ts — API型定義(snake_case) 🔴最優先 — @nyanko12
 - #22 [FE] lib/audio.ts — マイク録音(getUserMedia) — @nyanko12
-- #26 [FE] Next.jsプロジェクト雛形セットアップ(App Router/TS/フォルダ構造) — @satoryudev
 
-_最終更新: 2026-06-16 02:24 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
+_最終更新: 2026-06-16 02:40 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
