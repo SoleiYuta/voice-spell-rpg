@@ -46,7 +46,7 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 
 | マイルストーン | 完了/全体 | 状態 |
 |---|---|---|
-| W1: AIが呪文出題→詠唱可 (〜6/21) | 0/8 | 🔵 進行中 |
+| W1: AIが呪文出題→詠唱可 (〜6/21) | 1/8 | 🔵 進行中 |
 | W2: 縦切りデモ動作 (〜6/28) | 0/12 | ⬜ 未着手 |
 | W3: Real全結合・機能凍結 (〜7/5) | 0/3 | ⬜ 未着手 |
 | W4: リハ完了・提出 (〜7/12) | 0/2 | ⬜ 未着手 |
@@ -55,11 +55,10 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 - #3 [FE] SpellCard(呪文表示)＋RecordButton(録音ボタン) — @kazuma660
 - #8 [Infra] Cloud Runデプロイ(backend)＋GitHub Actions CI/CD — @koki1005
 - #10 [BE] speed_wpm修正(word_time_offsets) — @satoryudev
-- #12 [BE] /generate-spell 実装(Gemini呪文生成) 🔴最優先 — @satoryudev
 - #19 [FE] lib/types.ts — API型定義(snake_case) 🔴最優先 — @nyanko12
 - #22 [FE] lib/audio.ts — マイク録音(getUserMedia) — @nyanko12
 - #26 [FE] Next.jsプロジェクト雛形セットアップ(App Router/TS/フォルダ構造) — @satoryudev
 - #28 [Infra] backendにCORS設定(フロントのオリジン許可) — @koki1005
 
-_最終更新: 2026-06-16 01:11 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
+_最終更新: 2026-06-16 01:50 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
