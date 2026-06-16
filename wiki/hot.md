@@ -77,7 +77,7 @@ tags: [meta, hot-cache]
 - #22 [FE] lib/audio.ts — マイク録音(getUserMedia) — @nyanko12
 - #26 [FE] Next.jsプロジェクト雛形セットアップ(App Router/TS/フォルダ構造) — @satoryudev
 
-_最終更新: 2026-06-16 02:23 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
+_最終更新: 2026-06-16 02:24 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
 
 ---
