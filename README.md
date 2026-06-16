@@ -61,5 +61,5 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 - #26 [FE] Next.jsプロジェクト雛形セットアップ(App Router/TS/フォルダ構造) — @satoryudev
 - #28 [Infra] backendにCORS設定(フロントのオリジン許可) — @koki1005
 
-_最終更新: 2026-06-16 01:03 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
+_最終更新: 2026-06-16 01:11 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
