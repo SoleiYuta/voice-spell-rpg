@@ -1,0 +1,51 @@
+name: Deploy to Cloud Run
+
+# develop の backend/ が変わったら Cloud Run に自動デプロイ（push→deploy ＝ DevOps「まわす」）
+# 認証は Workload Identity Federation（鍵レス・推奨）。
+# 必要な GitHub Actions variables: GCP_WIF_PROVIDER, GCP_SERVICE_ACCOUNT
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # WIF の OIDC トークン取得に必要
+
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: voicespellrpg
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy voice-spell-api \
+            --source backend \
+            --region asia-northeast1 \
+            --allow-unauthenticated \
+            --project voicespellrpg \
+            --quiet
+
+      - name: Show service URL
+        run: |
+          gcloud run services describe voice-spell-api \
+            --region asia-northeast1 --project voicespellrpg \
+            --format='value(status.url)'
