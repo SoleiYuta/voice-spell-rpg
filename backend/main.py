@@ -1,13 +1,18 @@
 import asyncio
 import io
+import json
 import logging
 import os
 import time
+from typing import Optional
+
 import numpy as np
 import librosa
 from fastapi import FastAPI, File, Form, UploadFile
+from pydantic import BaseModel
 from google.cloud import speech
 from google import genai
+from google.genai import types
 from rapidfuzz import fuzz
 
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +25,35 @@ gemini_client = genai.Client(
     project="voicespellrpg",
     location="asia-northeast1",
 )
+
+SPELL_TYPES = ["fire", "ice", "thunder", "dark", "light", "wind"]
+FALLBACK_SPELL = {
+    "spell_text": "我が手に宿れ、紅蓮の焔よ",
+    "difficulty": 2,
+    "spell_type": "fire",
+    "expected_length_sec": 3.0,
+}
+
+
+class PlayerProfile(BaseModel):
+    avg_match_rate: float = 0.0
+    avg_volume: str = "normal"
+    avg_speed: str = "normal"
+    weak_pattern: str = ""
+    strong_pattern: str = ""
+
+
+class GenerateSpellRequest(BaseModel):
+    session_id: str = ""
+    floor_id: str = ""
+    player_profile: Optional[PlayerProfile] = None
+
+
+class SpellData(BaseModel):
+    spell_text: str
+    difficulty: int
+    spell_type: str
+    expected_length_sec: float
 
 
 def transcribe(wav_bytes: bytes) -> tuple[str, float]:
@@ -136,3 +170,66 @@ async def evaluate(
         "gm_comment": gm_comment,
         "spell_power": spell_power,
     }
+
+
+def _parse_floor(floor_id: str) -> int:
+    digits = "".join(c for c in (floor_id or "") if c.isdigit())
+    return int(digits) if digits else 1
+
+
+def generate_spell(profile: Optional[PlayerProfile], floor_num: int) -> dict:
+    if profile:
+        prof_desc = (
+            f"- 平均一致率: {profile.avg_match_rate:.0%}\n"
+            f"- 平均音量: {profile.avg_volume}\n"
+            f"- 得意: {profile.strong_pattern or '不明'}\n"
+            f"- 苦手: {profile.weak_pattern or '不明'}"
+        )
+    else:
+        prof_desc = "（初回・傾向データなし。標準的な難易度で）"
+
+    prompt = f"""あなたはプレイヤーの才能を見抜く魔導書の精霊。次の試練の呪文を1つ生成せよ。
+
+フロア{floor_num}。プレイヤーの傾向:
+{prof_desc}
+
+方針:
+- 得意は伸ばし、苦手は少しだけ挑戦させる難易度にする
+- フロアが進むほど難しく（長め・発音難）
+- 声に出して詠唱したくなる、厨二病で格好いい日本語の呪文（1〜2文・40字以内目安）
+- difficulty は 1〜5（フロア{floor_num}相当）、spell_type は {"/".join(SPELL_TYPES)} のいずれか
+- expected_length_sec は詠唱想定秒数（1.5〜6.0）
+
+JSON で spell_text, difficulty, spell_type, expected_length_sec を返せ。"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=SpellData,
+            ),
+        )
+        data = json.loads(response.text)
+        return {
+            "spell_text": str(data.get("spell_text") or FALLBACK_SPELL["spell_text"]).strip(),
+            "difficulty": max(1, min(5, int(data.get("difficulty", 2)))),
+            "spell_type": data.get("spell_type") if data.get("spell_type") in SPELL_TYPES else "fire",
+            "expected_length_sec": round(max(1.0, min(8.0, float(data.get("expected_length_sec", 3.0)))), 1),
+        }
+    except Exception as e:
+        logger.warning(f"generate_spell error: {e}")
+        return dict(FALLBACK_SPELL)
+
+
+@app.post("/generate-spell")
+async def generate_spell_endpoint(req: GenerateSpellRequest):
+    t0 = time.time()
+    floor_num = _parse_floor(req.floor_id)
+    loop = asyncio.get_event_loop()
+    spell = await loop.run_in_executor(
+        None, lambda: generate_spell(req.player_profile, floor_num)
+    )
+    logger.info(f"[timing] generate-spell={time.time()-t0:.2f}s floor={floor_num}")
+    return spell
