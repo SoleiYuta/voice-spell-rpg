@@ -2,6 +2,7 @@
 // ベースURLは env から（URL直書き禁止）。土台担当: mutsukichi(nyanko12)。
 import type {
   EvaluationResult,
+  FloorLog,
   PlayerProfile,
   ResultData,
   SpellData,
@@ -41,9 +42,16 @@ export async function evaluate(args: {
   return res.json();
 }
 
-// セッション総評（診断）。バックエンド #13 実装後に有効。
-export async function getResult(sessionId: string): Promise<ResultData> {
-  const res = await fetch(`${BASE}/result/${encodeURIComponent(sessionId)}`);
+// セッション総評（診断）。Firestore不使用のため、フロントが保持する詠唱履歴を渡す。
+export async function getResult(args: {
+  session_id?: string;
+  floors: FloorLog[];
+}): Promise<ResultData> {
+  const res = await fetch(`${BASE}/result`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
   if (!res.ok) throw new Error(`result failed: ${res.status}`);
   return res.json();
 }

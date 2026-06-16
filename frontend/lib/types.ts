@@ -43,3 +43,15 @@ export interface ResultData {
   ai_verdict: string;
   stats: { avg_volume: Volume; total_hesitation: number; avg_match_rate: number };
 }
+
+// /result に渡す1フロア分のログ（useGame の履歴から組み立てる）
+export interface FloorLog {
+  floor_id?: string;
+  spell_text?: string;
+  match_rate?: number;
+  volume?: Volume;
+  speed_wpm?: number;
+  completion_rate?: number;
+  hesitation_count?: number;
+  spell_power?: number;
+}
