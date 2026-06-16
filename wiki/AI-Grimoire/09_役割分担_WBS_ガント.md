@@ -11,11 +11,11 @@ created: 2026-06-15
 
 # 役割分担・WBS・ガントチャート
 
-**前提：残り約4週間（2026-06-15 〜 07-12）／5人・初心者多め・全員 Claude Code 所持。**
-難所（GCP/STT/Cloud Run）は1人に集約し、他は Claude Code で補完できる粒度に分割する。
+**前提：提出〆切 2026-07-10 ／ 4人（koukichi脱退）・初心者多め・全員 Claude Code 所持。**
+難所（GCP/Cloud Run）は satoryudev に集約し、他は Claude Code で補完できる粒度に分割する。
 
-> 現状：`/evaluate`（STT + librosa + Gemini コメント）まで実装済み。
-> 「目当てのゲーム＝適応型AIゲームマスター」を成立させるには、以下の残作業が必要。
+> ⚠️ このページの WBS表・ガントは初版（Unity前提・5人時代）。**最新の作業単位は GitHub issues が正**（Web設計に再編済み）。役割は下表が最新。
+> 現状：`/evaluate` ＋ `/generate-spell`（適応呪文生成）実装済み。設計は [[10_Web設計書]] / [[11_リザルト診断設計]]。
 
 ---
 
@@ -24,20 +24,21 @@ created: 2026-06-15
 | # | 役割 | 担当者 |
 |---|---|---|
 | 1 | **PM／リーダー／統合** | satoryudev |
-| 2 | Unity見た目・演出 | mutsukichi・蒸し焼き・harukichi |
-| 3 | Unity↔APIつなぎ | mutsukichi・蒸し焼き |
+| 2 | フロント見た目・演出 | mutsukichi・蒸し焼き・harukichi |
+| 3 | フロント↔APIつなぎ | mutsukichi・蒸し焼き |
 | 4 | バックエンドAI（Gemini） | satoryudev |
-| 5 | インフラ／デプロイ | satoryudev・koukichi |
+| 5 | インフラ／デプロイ | satoryudev |
+
+> ⚠️ **2026-06-16: koukichi 脱退**。インフラは satoryudev が引継。Cloud Runデプロイ(#8)・CORS(#28)=satoryudev、フロント配信(#29)=mutsukichi。**Firestore(#14)カット・TTS(#15)後回し・Logging(#16)は#8に吸収**。
 
 ### 担当ごとの責務
 
 | 担当者 | 持ち役割 | 主な責務 |
 |---|---|---|
-| **satoryudev** | 1・4・5 | PM・進行管理・シーン統合・フロア進行・Gemini AI・Cloud Run／デプロイ統括 |
-| **mutsukichi** | 2・3 | UI・演出 ＋ UnityWebRequest 連携 |
-| **蒸し焼き** | 2・3 | UI・演出 ＋ UnityWebRequest 連携 |
-| **koukichi** | 5 | インフラ実質オーナー（Cloud Run／CI/CD／Firestore／TTS API） |
-| **harukichi** | 2 | UI・演出（リザルト画面・エフェクト中心） |
+| **satoryudev** | 1・4・5 | PM・統合(page.tsx)・Gemini AI(generate-spell/result)・**Cloud Runデプロイ/CI/CD・CORS** |
+| **mutsukichi**(nyanko12) | 2・3 | フロント土台 `lib/`(types/api/audio/useGame) ＋ **フロント配信(Vercel)** |
+| **蒸し焼き**(kazuma660) | 2・3 | フロントUI・演出（SpellCard/RecordButton/Title等） |
+| **harukichi**(Haruku-Sato) | 2 | フロントUI・演出（BattleScene/結果画面/エフェクト） |
 
 > 保険：5(インフラ)は GCP で詰まりやすいため、**koukichi を実質オーナー**にして satoryudev は指揮に回れるようにする。
 

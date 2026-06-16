@@ -39,10 +39,10 @@ tags: [meta, hot-cache]
 | # | 役割 | 担当者 |
 |---|---|---|
 | 1 | PM／リーダー／統合 | satoryudev |
-| 2 | Unity見た目・演出 | mutsukichi・蒸し焼き・harukichi |
-| 3 | Unity↔APIつなぎ | mutsukichi・蒸し焼き |
+| 2 | フロント見た目・演出 | mutsukichi・蒸し焼き・harukichi |
+| 3 | フロント↔APIつなぎ | mutsukichi・蒸し焼き |
 | 4 | バックエンドAI（Gemini） | satoryudev |
-| 5 | インフラ／デプロイ | koukichi（実質オーナー）・satoryudev |
+| 5 | インフラ／デプロイ | satoryudev（koukichi脱退で引継・#29配信はmutsukichi） |
 
 各自の作業内容は [[AI-Grimoire/09_役割分担_WBS_ガント]] のWBSを参照。
 
