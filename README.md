@@ -56,5 +56,5 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 - #10 [BE] speed_wpm修正(word_time_offsets) — @satoryudev
 - #22 [FE] lib/audio.ts — マイク録音(getUserMedia) — @satoryudev
 
-_最終更新: 2026-06-16 02:52 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
+_最終更新: 2026-06-16 02:53 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
