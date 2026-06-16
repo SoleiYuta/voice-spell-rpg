@@ -1,0 +1,22 @@
+:root {
+  --bg: #0f0b1e;
+  --fg: #e9e4ff;
+  --accent: #a06bff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  line-height: 1.6;
+}
