@@ -261,3 +261,124 @@ async def generate_spell_endpoint(req: GenerateSpellRequest):
     )
     logger.info(f"[timing] generate-spell={time.time()-t0:.2f}s floor={floor_num}")
     return spell
+
+
+# ===== /result（リザルト診断）=====
+# Firestore未使用のため、フロントが保持するセッション履歴を受け取って集計する。
+# タイプは「コードで機械的に確定」→ Geminiは煽り文の味付けだけ（詳細: 11_リザルト診断設計）。
+
+TYPE_NAMES = {
+    "loud_clean": "正統派の大魔導士",
+    "loud_messy": "勢い任せの暴れ詠唱",
+    "quiet_clean": "囁きの暗殺者",
+    "quiet_messy": "自信なき見習い",
+    "normal_clean": "安定詠唱の賢者",
+    "normal_messy": "ムラのある術士",
+}
+
+
+class FloorLog(BaseModel):
+    floor_id: str = ""
+    spell_text: str = ""
+    match_rate: float = 0.0
+    volume: str = "normal"
+    speed_wpm: float = 0.0
+    completion_rate: float = 0.0
+    hesitation_count: int = 0
+    spell_power: float = 0.0
+
+
+class ResultRequest(BaseModel):
+    session_id: str = ""
+    floors: list[FloorLog] = []
+
+
+def classify_type(floors: list[FloorLog]) -> tuple[str, dict]:
+    """2軸（音量 × 安定）でタイプを機械的に確定し、集計statsを返す。"""
+    n = len(floors)
+    counts = {"loud": 0, "normal": 0, "quiet": 0}
+    for f in floors:
+        counts[f.volume if f.volume in counts else "normal"] += 1
+    avg_volume = max(counts, key=counts.get)
+    avg_completion = sum(f.completion_rate for f in floors) / n
+    total_hesitation = sum(f.hesitation_count for f in floors)
+    clean = avg_completion >= 0.85 and total_hesitation <= n
+    type_key = f"{avg_volume}_{'clean' if clean else 'messy'}"
+    stats = {
+        "avg_volume": avg_volume,
+        "total_hesitation": total_hesitation,
+        "avg_match_rate": round(sum(f.match_rate for f in floors) / n, 2),
+    }
+    return type_key, stats
+
+
+def build_verdict(type_name: str, stats: dict, best: dict, events: str) -> str:
+    vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(
+        stats["avg_volume"], stats["avg_volume"]
+    )
+    prompt = f"""あなたは皮肉屋の古代魔導書。プレイヤーの詠唱セッションを総評する。
+確定タイプ: {type_name}
+実測: 平均音量={vol_ja} / 詰まり合計={stats['total_hesitation']} / 平均一致率={stats['avg_match_rate']:.0%}
+ベスト詠唱: 「{best['spell_text']}」(威力{best['spell_power']})
+観測事象: {events}
+→ 上の観測事象と数値を必ず引用し、50〜80字の日本語で煽れ。性格の捏造・改善アドバイスは禁止。"""
+    try:
+        res = gemini_client.models.generate_content(
+            model="gemini-2.5-flash", contents=prompt
+        )
+        return res.text.strip()
+    except Exception as e:
+        logger.warning(f"build_verdict error: {e}")
+        return f"お前は{type_name}だ。それ以上でも以下でもない。"
+
+
+@app.post("/result")
+async def result_endpoint(req: ResultRequest):
+    floors = req.floors
+    if not floors:
+        return {
+            "session_id": req.session_id,
+            "type_key": "unknown",
+            "type_name": "詠唱なき者",
+            "best_floor": {"floor_id": "", "spell_text": "", "spell_power": 0.0},
+            "ai_verdict": "一度も詠唱せぬとはな。話にならん。",
+            "stats": {"avg_volume": "normal", "total_hesitation": 0, "avg_match_rate": 0.0},
+        }
+
+    type_key, stats = classify_type(floors)
+    type_name = TYPE_NAMES.get(type_key, "謎の詠唱者")
+
+    best = max(floors, key=lambda f: f.spell_power)
+    best_floor = {
+        "floor_id": best.floor_id,
+        "spell_text": best.spell_text,
+        "spell_power": round(best.spell_power, 2),
+    }
+
+    # 観測事象（本人が体感した事実を引用させる材料。捏造防止）
+    events = []
+    stumbles = [f for f in floors if f.hesitation_count > 0]
+    if stumbles:
+        worst = max(stumbles, key=lambda f: f.hesitation_count)
+        events.append(f"{worst.floor_id or 'あるフロア'}で{worst.hesitation_count}回噛んだ")
+    if stats["avg_volume"] == "loud":
+        events.append("終始大声")
+    elif stats["avg_volume"] == "quiet":
+        events.append("終始小声")
+    events_str = "・".join(events) if events else "特筆事項なし"
+
+    loop = asyncio.get_event_loop()
+    t0 = time.time()
+    verdict = await loop.run_in_executor(
+        None, lambda: build_verdict(type_name, stats, best_floor, events_str)
+    )
+    logger.info(f"[timing] result gemini={time.time()-t0:.2f}s floors={len(floors)}")
+
+    return {
+        "session_id": req.session_id,
+        "type_key": type_key,
+        "type_name": type_name,
+        "best_floor": best_floor,
+        "ai_verdict": verdict,
+        "stats": stats,
+    }
