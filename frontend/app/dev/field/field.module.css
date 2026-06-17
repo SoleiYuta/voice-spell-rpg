@@ -1,0 +1,165 @@
+/* 実験フィールド用スタイル。エフェクト調整・AoE当たり判定の確認に使い回す。
+   担当: harukichi (#2 / #4) */
+
+.field {
+  position: relative;
+  width: 100%;
+  height: 460px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 16px;
+  overflow: hidden;
+  cursor: crosshair;
+  image-rendering: pixelated;
+  background-color: var(--bg);
+  /* 床っぽいグリッド */
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* AoE当たり判定リング（膨らむ→萎む。半径・濃さは JS から指定） */
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border: 2px solid var(--ring-color);
+  background: radial-gradient(circle, color-mix(in srgb, var(--ring-color) 35%, transparent), transparent 70%);
+}
+
+/* 完成時の一撃フラッシュ（ピーク到達の瞬間に弾ける） */
+.burst {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background: radial-gradient(circle, #fff, var(--ring-color) 50%, transparent 72%);
+  animation: burstPop 0.32s steps(6) forwards;
+}
+
+@keyframes burstPop {
+  0% { opacity: 0.9; transform: translate(-50%, -50%) scale(0.5); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.15); }
+}
+
+/* 消滅後に残るダメージ床（スリップダメージ。点滅でゾーンを示す） */
+.floor {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border: 2px dashed color-mix(in srgb, var(--ring-color) 70%, transparent);
+  background: radial-gradient(circle, color-mix(in srgb, var(--ring-color) 22%, transparent), transparent 72%);
+  animation: floorPulse 0.9s steps(4) infinite;
+}
+
+@keyframes floorPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.85; }
+}
+
+/* 敵 */
+.enemy {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.enemyEmoji {
+  font-size: 30px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+}
+
+.defeated .enemyEmoji {
+  filter: grayscale(1) brightness(0.5);
+  opacity: 0.4;
+}
+
+/* 状態異常 */
+.frozen .enemyEmoji {
+  filter: drop-shadow(0 0 5px #5fcaff) saturate(1.3) brightness(1.1);
+}
+
+.confused .enemyEmoji {
+  filter: drop-shadow(0 0 5px #a23bff);
+}
+
+.status {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ゴール（敵が目指す地点） */
+.goal {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 30px;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+
+.hpTrack {
+  width: 38px;
+  height: 5px;
+  margin: 3px auto 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.hpFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff5c7a, var(--accent));
+}
+
+/* 発生位置マーカー（十字） */
+.marker {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.marker::before,
+.marker::after {
+  content: "";
+  position: absolute;
+  background: var(--accent);
+}
+
+.marker::before {
+  left: 50%;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.marker::after {
+  top: 50%;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  transform: translateY(-50%);
+}
+
+/* 効果（SpellEffect）を発生位置に重ねるラッパ */
+.fxAnchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}

@@ -1,0 +1,129 @@
+/* 呪文エフェクト（ピクセルアート風・多属性）。BattleScene 上に重ねて表示。
+   ドット感を出すため crispEdges / steps() アニメ / 矩形パーティクルで構成。
+   属性ごとに動き(motion)・配色・スプライトを差し替える。
+   担当: harukichi (#2 / #4) */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* 画面全体フラッシュ（色と強さは属性・派手さで変化） */
+.flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 56%,
+    var(--flashCore, #fff),
+    var(--flashColor, #ff7a33) 45%,
+    transparent 72%
+  );
+  opacity: 0;
+  animation: flash var(--dur) steps(6) forwards;
+}
+
+@keyframes flash {
+  0% { opacity: 0; }
+  12% { opacity: var(--flash, 0); }
+  100% { opacity: 0; }
+}
+
+/* 中心スプライト（2フレームを点滅させてドット炎/結晶などの揺らぎを表現） */
+.core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+}
+
+/* 炎など下から立ち上る系（その場で出現→保持→opacityで消える） */
+.coreBottom {
+  transform-origin: 50% 100%;
+  animation: coreBottom var(--dur) steps(10) forwards;
+}
+
+@keyframes coreBottom {
+  0% { transform: translate(-50%, -42%) scale(0); opacity: 1; }
+  18% { transform: translate(-50%, -42%) scale(calc(var(--scale) * 1.15)); opacity: 1; }
+  38% { transform: translate(-50%, -42%) scale(var(--scale)); opacity: 1; }
+  70% { transform: translate(-50%, -42%) scale(var(--scale)); opacity: 1; }
+  100% { transform: translate(-50%, -42%) scale(var(--scale)); opacity: 0; }
+}
+
+/* 結晶・雷・闇など中心で弾ける系（その場で出現→保持→opacityで消える） */
+.coreCenter {
+  transform-origin: 50% 50%;
+  animation: coreCenter var(--dur) steps(10) forwards;
+}
+
+@keyframes coreCenter {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+  20% { transform: translate(-50%, -50%) scale(calc(var(--scale) * 1.2)); opacity: 1; }
+  40% { transform: translate(-50%, -50%) scale(var(--scale)); opacity: 1; }
+  70% { transform: translate(-50%, -50%) scale(var(--scale)); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(var(--scale)); opacity: 0; }
+}
+
+.sprite {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+/* 2フレーム目を高速点滅＝パラパラ揺らぎ */
+.frameB {
+  animation: frameBlink 0.16s steps(1) infinite;
+}
+
+@keyframes frameBlink {
+  0%, 49.9% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* ── パーティクル共通 ── */
+.particle {
+  position: absolute;
+  width: var(--size);
+  height: var(--size);
+  background: var(--color);
+  opacity: 0;
+}
+
+/* 上昇（炎の火の粉） */
+.rise {
+  bottom: 36%;
+  left: var(--left);
+  animation: pRise var(--pdur) steps(7) var(--delay) forwards;
+}
+
+@keyframes pRise {
+  0% { transform: translate(0, 0); opacity: 1; }
+  100% { transform: translate(var(--dx), calc(var(--dist) * -1)); opacity: 0; }
+}
+
+/* 落下（氷の破片） */
+.fall {
+  top: 6%;
+  left: var(--left);
+  animation: pFall var(--pdur) steps(7) var(--delay) forwards;
+}
+
+@keyframes pFall {
+  0% { transform: translate(0, 0); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dist)); opacity: 0; }
+}
+
+/* 放射（雷・闇の飛散） */
+.burst {
+  top: 50%;
+  left: 50%;
+  animation: pBurst var(--pdur) steps(5) var(--delay) forwards;
+}
+
+@keyframes pBurst {
+  0% { transform: translate(-50%, -50%); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)); opacity: 0; }
+}
