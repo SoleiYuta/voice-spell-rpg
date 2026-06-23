@@ -79,7 +79,21 @@ def to_wav_16k_mono(raw: bytes) -> bytes:
     return out.getvalue()
 
 
-def transcribe(wav_bytes: bytes) -> tuple[str, float]:
+def _calc_speed_wpm(words) -> float:
+    """STTの単語タイムスタンプから発話速度(WPM)を算出。
+    最初の単語の開始〜最後の単語の終了を所要時間とし、単語数 / 秒 × 60。
+    単語が1個以下・所要時間0なら測定不能として0.0。"""
+    if len(words) < 2:
+        return 0.0
+    start = words[0].start_time.total_seconds()
+    end = words[-1].end_time.total_seconds()
+    duration = end - start
+    if duration <= 0:
+        return 0.0
+    return round(len(words) / duration * 60.0, 1)
+
+
+def transcribe(wav_bytes: bytes) -> tuple[str, float, float]:
     audio = speech.RecognitionAudio(content=wav_bytes)
     config = speech.RecognitionConfig(
         language_code="ja-JP",
@@ -87,9 +101,9 @@ def transcribe(wav_bytes: bytes) -> tuple[str, float]:
     )
     response = stt_client.recognize(config=config, audio=audio)
     if not response.results:
-        return "", 0.0
+        return "", 0.0, 0.0
     result = response.results[0].alternatives[0]
-    return result.transcript, result.confidence
+    return result.transcript, result.confidence, _calc_speed_wpm(result.words)
 
 
 def calc_match_rate(spell_text: str, transcript: str) -> float:
@@ -104,10 +118,9 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     # 無音区間を除いた発話部分を抽出
     intervals = librosa.effects.split(y, top_db=30)
     if len(intervals) == 0:
-        return {"volume": "quiet", "speed_wpm": 0.0, "hesitation_count": 0}
+        return {"volume": "quiet", "hesitation_count": 0}
 
     speech_samples = np.concatenate([y[s:e] for s, e in intervals])
-    speech_duration_sec = len(speech_samples) / sr
 
     # 音量（RMS）
     rms = float(np.sqrt(np.mean(speech_samples ** 2)))
@@ -121,10 +134,8 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     # 詰まり回数（無音区間の数 - 1）
     hesitation_count = max(0, len(intervals) - 1)
 
-    # 速度は後でSTT word_time_offsets から計算（今は0）
     return {
         "volume": volume,
-        "speed_wpm": round(60.0 / speech_duration_sec, 1) if speech_duration_sec > 0 else 0.0,
         "hesitation_count": hesitation_count,
     }
 
@@ -171,7 +182,7 @@ async def evaluate(
     logger.info(f"[timing] read+transcode={time.time()-t0:.2f}s")
 
     t1 = time.time()
-    (transcript, confidence), audio = await asyncio.gather(
+    (transcript, confidence, speed_wpm), audio = await asyncio.gather(
         loop.run_in_executor(None, lambda: transcribe(wav_bytes)),
         loop.run_in_executor(None, lambda: analyze_audio(wav_bytes)),
     )
@@ -191,7 +202,7 @@ async def evaluate(
         "transcript": transcript,
         "match_rate": round(match_rate, 2),
         "volume": audio["volume"],
-        "speed_wpm": audio["speed_wpm"],
+        "speed_wpm": speed_wpm,
         "completion_rate": completion_rate,
         "hesitation_count": audio["hesitation_count"],
         "confidence": round(confidence, 2),
