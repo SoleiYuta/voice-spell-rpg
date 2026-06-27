@@ -140,14 +140,31 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     }
 
 
-def generate_gm_comment(transcript: str, match_rate: float, volume: str, spell_power: float) -> str:
-    prompt = f"""あなたは古代魔導書に宿る皮肉屋の精霊です。
-プレイヤーの詠唱結果を見て、一言コメントしてください。
-- 認識テキスト: {transcript}
+def generate_gm_comment(
+    transcript: str,
+    match_rate: float,
+    volume: str,
+    speed_wpm: float,
+    hesitation_count: int,
+    completion_rate: float,
+    spell_power: float,
+) -> str:
+    vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(volume, volume)
+    prompt = f"""あなたは古代魔導書に宿る皮肉屋の精霊。プレイヤーの今の詠唱に一言だけ返せ。
+
+実測:
+- 認識テキスト: 「{transcript}」
 - 一致率: {match_rate:.0%}
-- 音量: {volume}
+- 声量: {vol_ja}
+- 速度: {speed_wpm} wpm
+- 詰まり: {hesitation_count}回
+- 完了率: {completion_rate:.0%}
 - 詠唱威力: {spell_power}
-日本語50文字以内で、褒め・煽り・挑発を混ぜた口調で。"""
+
+ルール:
+- 上の実測のうち最も目立つ点を1つ具体的に引用して、褒め・煽り・挑発を混ぜる（例「3回も噛んだな」「大声だけは一流だ」）
+- 日本語1文・40字以内・皮肉屋の口調
+- ラベル名（"一致率""声量"等）はそのまま書かず、自然な口語で"""
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
@@ -194,7 +211,16 @@ async def evaluate(
 
     t2 = time.time()
     gm_comment = await loop.run_in_executor(
-        None, lambda: generate_gm_comment(transcript, match_rate, audio["volume"], spell_power)
+        None,
+        lambda: generate_gm_comment(
+            transcript,
+            match_rate,
+            audio["volume"],
+            speed_wpm,
+            audio["hesitation_count"],
+            completion_rate,
+            spell_power,
+        ),
     )
     logger.info(f"[timing] gemini={time.time()-t2:.2f}s total={time.time()-t0:.2f}s")
 
@@ -218,9 +244,12 @@ def _parse_floor(floor_id: str) -> int:
 
 def generate_spell(profile: Optional[PlayerProfile], floor_num: int) -> dict:
     if profile:
+        vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(
+            profile.avg_volume, profile.avg_volume
+        )
         prof_desc = (
             f"- 平均一致率: {profile.avg_match_rate:.0%}\n"
-            f"- 平均音量: {profile.avg_volume}\n"
+            f"- 平均声量: {vol_ja}\n"
             f"- 得意: {profile.strong_pattern or '不明'}\n"
             f"- 苦手: {profile.weak_pattern or '不明'}"
         )
@@ -233,7 +262,7 @@ def generate_spell(profile: Optional[PlayerProfile], floor_num: int) -> dict:
 {prof_desc}
 
 方針:
-- 得意は伸ばし、苦手は少しだけ挑戦させる難易度にする
+- プレイヤーの傾向に合わせる：苦手を少しだけ克服させ、得意が活きる内容・難易度にする（傾向不明なら標準）
 - フロアが進むほど難しく（長め・発音難）
 - 声に出して詠唱したくなる、厨二病で格好いい日本語の呪文（1〜2文・40字以内目安）
 - difficulty は 1〜5（フロア{floor_num}相当）、spell_type は {"/".join(SPELL_TYPES)} のいずれか
@@ -332,7 +361,8 @@ def build_verdict(type_name: str, stats: dict, best: dict, events: str) -> str:
 実測: 平均音量={vol_ja} / 詰まり合計={stats['total_hesitation']} / 平均一致率={stats['avg_match_rate']:.0%}
 ベスト詠唱: 「{best['spell_text']}」(威力{best['spell_power']})
 観測事象: {events}
-→ 上の観測事象と数値を必ず引用し、50〜80字の日本語で煽れ。性格の捏造・改善アドバイスは禁止。"""
+→ 上の観測事象と数値を必ず引用し、50〜80字の日本語で煽れ。
+ただし「確定タイプ」「平均音量」等のラベル名はそのまま書かず、自然な口語で。タイプ名は文に織り込む。性格の捏造・改善アドバイスは禁止。"""
     try:
         res = gemini_client.models.generate_content(
             model="gemini-2.5-flash", contents=prompt
