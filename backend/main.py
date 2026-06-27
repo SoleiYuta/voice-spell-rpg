@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 import numpy as np
-import librosa
+import soundfile as sf
 from pydub import AudioSegment
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -113,26 +113,43 @@ def calc_match_rate(spell_text: str, transcript: str) -> float:
 
 
 def analyze_audio(wav_bytes: bytes) -> dict:
-    y, sr = librosa.load(io.BytesIO(wav_bytes), sr=16000, mono=True)
-
-    # 無音区間を除いた発話部分を抽出
-    intervals = librosa.effects.split(y, top_db=30)
-    if len(intervals) == 0:
+    # soundfile + numpy のみ（librosa/numba 不使用＝コールドスタートが速い）
+    y, sr = sf.read(io.BytesIO(wav_bytes), dtype="float32")
+    if getattr(y, "ndim", 1) > 1:  # ステレオ→モノラル
+        y = y.mean(axis=1)
+    y = np.asarray(y, dtype=np.float32)
+    if y.size == 0:
         return {"volume": "quiet", "hesitation_count": 0}
 
-    speech_samples = np.concatenate([y[s:e] for s, e in intervals])
+    # フレームRMS（25ms窓・10msホップ）を numpy で算出
+    win = max(1, int(sr * 0.025))
+    hop = max(1, int(sr * 0.010))
+    if y.size < win:
+        frames = np.array([np.sqrt(np.mean(y ** 2))], dtype=np.float32)
+    else:
+        n = 1 + (y.size - win) // hop
+        idx = (np.arange(n) * hop)[:, None] + np.arange(win)[None, :]
+        frames = np.sqrt(np.mean(y[idx] ** 2, axis=1))
 
-    # 音量（RMS）
-    rms = float(np.sqrt(np.mean(speech_samples ** 2)))
-    if rms > 0.05:
+    peak = float(frames.max())
+    if peak <= 0:
+        return {"volume": "quiet", "hesitation_count": 0}
+
+    # 無音判定：ピークの top_db=30 相当（10^(-30/20) ≒ 0.0316倍）を閾値に
+    voiced = frames > peak * (10 ** (-30 / 20))
+
+    # 音量（発話フレームのRMS）
+    speech_rms = float(np.sqrt(np.mean(frames[voiced] ** 2))) if voiced.any() else 0.0
+    if speech_rms > 0.05:
         volume = "loud"
-    elif rms > 0.01:
+    elif speech_rms > 0.01:
         volume = "normal"
     else:
         volume = "quiet"
 
-    # 詰まり回数（無音区間の数 - 1）
-    hesitation_count = max(0, len(intervals) - 1)
+    # 詰まり回数 = 発話区間（連続Trueブロック）の数 - 1
+    segments = int(np.sum(voiced[1:] & ~voiced[:-1])) + (1 if bool(voiced[0]) else 0)
+    hesitation_count = max(0, segments - 1)
 
     return {
         "volume": volume,
