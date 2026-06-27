@@ -55,5 +55,5 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 - #3 [FE] SpellCard(呪文表示)＋RecordButton(録音ボタン) — @kazuma660
 - #22 [FE] lib/audio.ts — マイク録音(getUserMedia) — @kazuma660
 
-_最終更新: 2026-06-27 08:58 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
+_最終更新: 2026-06-27 08:59 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
