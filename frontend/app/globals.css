@@ -1,7 +1,11 @@
+/* 日本語対応のドットフォント（ピクセルUI用）。通常UIは従来フォントのまま。 */
+@import url("https://fonts.googleapis.com/css2?family=DotGothic16&display=swap");
+
 :root {
   --bg: #0f0b1e;
   --fg: #e9e4ff;
   --accent: #a06bff;
+  --pixel-font: "DotGothic16", "Courier New", monospace;
 }
 
 * {

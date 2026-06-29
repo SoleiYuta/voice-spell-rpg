@@ -1,0 +1,76 @@
+/* AI魔導書（ゲームマスター）の煽りコメント。result 状態で表示。
+   gm_comment(Gemini出力)を魔導書風の吹き出しで。担当: harukichi (#4) */
+
+.wrap {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.book {
+  font-size: 30px;
+  line-height: 1;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 60%, transparent));
+  animation: bob 2.4s ease-in-out infinite;
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.bubble {
+  position: relative;
+  flex: 1;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  font-size: 14px;
+  line-height: 1.7;
+  min-height: 1.7em;
+}
+
+/* 吹き出しのしっぽ */
+.bubble::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  top: 16px;
+  width: 12px;
+  height: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  border-left: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  transform: rotate(45deg);
+}
+
+/* ドット風（ピクセル）バリアント */
+.bubble.pixel {
+  border-radius: 0;
+  border: 2px solid var(--accent);
+  background: var(--bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  font-family: var(--pixel-font);
+}
+
+.bubble.pixel::before {
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.caret {
+  display: inline-block;
+  width: 0.5em;
+  color: var(--accent);
+  animation: blink 0.8s steps(1) infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
