@@ -1,0 +1,143 @@
+/* 詠唱評価バー。result 状態で表示（設計書 §4 / 04_音声詠唱評価項目）。
+   API型(EvaluationResult, snake_case)をそのまま受けて描画。担当: harukichi (#4) */
+
+.panel {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+
+/* コンパクト版（戦闘画面の隅などに小さく出す用） */
+.panel.compact {
+  max-width: 260px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 10%, color-mix(in srgb, var(--bg) 80%, transparent));
+}
+
+.compact .row {
+  margin-bottom: 6px;
+}
+
+.compact .rowHead {
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.compact .track {
+  height: 8px;
+}
+
+.compact .power {
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.compact .powerValue {
+  font-size: 20px;
+}
+
+.title {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+  margin-bottom: 12px;
+}
+
+.row {
+  margin-bottom: 10px;
+}
+
+.rowHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.rowValue {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+}
+
+.track {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 55%, #4be0ff), var(--accent));
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── ドット風（ピクセル）バリアント ── */
+.panel.pixel {
+  border: 3px solid var(--accent);
+  border-radius: 0;
+  background: var(--bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  image-rendering: pixelated;
+  font-family: var(--pixel-font);
+}
+
+.pixel .title {
+  letter-spacing: 0.12em;
+}
+
+/* セグメント（ブロック）バー：████████░░ 風 */
+.segTrack {
+  display: flex;
+  gap: 2px;
+}
+
+.seg {
+  flex: 1;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.segOn {
+  background: var(--accent);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.compact .seg {
+  height: 8px;
+}
+
+.pixel .powerValue {
+  font-family: var(--pixel-font);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* 詠唱威力（見出し） */
+.power {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.powerLabel {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.powerValue {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent);
+}

@@ -1,0 +1,187 @@
+/* 魔導書の立ち絵（ドット絵）。mood × variant ごとに反応が変わる。
+   担当: harukichi (#4) */
+
+.wrap {
+  position: relative;
+  display: inline-block;
+  overflow: visible;
+}
+
+/* 浮遊レイヤー（上下にふわふわ・transform layer1） */
+.hover {
+  display: block;
+}
+
+/* スプライト本体（開閉用 transform layer2） */
+.sprite {
+  display: block;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 60%, transparent));
+  transform-origin: 50% 100%;
+}
+
+.rune,
+.eye {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.pageFlip {
+  transform-box: fill-box;
+  display: none;
+}
+
+/* ───── idle（通常） ───── */
+.idle .sprite { animation: sway 3s ease-in-out infinite; }
+.idle .rune { animation: runePulse 1.6s ease-in-out infinite; }
+.idle .eye { animation: blink 3.4s ease-in-out infinite; }
+
+@keyframes sway {
+  0%, 100% { transform: translateY(0) rotate(-2.5deg); }
+  50% { transform: translateY(-3px) rotate(2.5deg); }
+}
+@keyframes runePulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; filter: brightness(1.6); }
+}
+@keyframes blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  93% { transform: scaleY(0.15); }
+  96% { transform: scaleY(1); }
+}
+
+/* ───── success / A：目をカッと見開く（閉じた本のまま） ───── */
+.successA .sprite { animation: bounceHappy 1.4s ease-in-out infinite; }
+.successA .rune { animation: runePulse 1.4s ease-in-out infinite; }
+.successA .eye { animation: eyeWide 1.4s ease-in-out infinite; }
+
+@keyframes bounceHappy {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes eyeWide {
+  0%, 100% { transform: scale(1.45); filter: brightness(1.6); }
+  50% { transform: scale(1.7); filter: brightness(2.1); }
+}
+
+/* ───── success / B：本を開く（一度きり）→ パラララと高速ページめくり ───── */
+.successB .hover { animation: bookHover 2.6s ease-in-out infinite 0.45s; }
+.successB .sprite {
+  /* scaleY(0.2)＝閉じている見た目 → scaleY(1)＝開いた状態 */
+  animation: openBook 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.successB .pageFlip {
+  display: block;
+  animation: flipFast 0.13s steps(4) infinite 0.45s; /* 開き終わってから猛烈にめくる */
+}
+
+/* ───── normal / B：本を開く → ぼちぼちの速度でページめくり ───── */
+.normalB .hover { animation: bookHover 3s ease-in-out infinite 0.7s; }
+.normalB .sprite {
+  animation: openBook 0.7s cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+}
+.normalB .pageFlip {
+  display: block;
+  animation: flipModerate 0.48s steps(4) infinite 0.7s;
+  fill: #fffce0;
+}
+
+@keyframes openBook {
+  0% { transform: scaleY(0.2); }       /* 閉じた本のように薄く */
+  60% { transform: scaleY(1.08); }     /* バサッと開きすぎてオーバーシュート */
+  100% { transform: scaleY(1); }       /* 落ち着いた開いた状態 */
+}
+
+@keyframes bookHover {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes flipFast {
+  0% { transform: translateX(0); opacity: 0.95; }
+  100% { transform: translateX(-3px); opacity: 0; }
+}
+@keyframes flipModerate {
+  0% { transform: translateX(0); opacity: 0.7; }
+  100% { transform: translateX(-3px); opacity: 0; }
+}
+
+/* 光る言葉が立ち上る（success B） */
+.fx {
+  position: absolute;
+  inset: auto 0 100% 0;
+  height: 32px;
+  pointer-events: none;
+}
+.word {
+  position: absolute;
+  bottom: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: #ffd23c;
+  text-shadow: 0 0 5px #ffd23c, 0 0 8px var(--accent);
+  font-family: var(--pixel-font);
+  opacity: 0;
+  /* 本が開いてから言葉が出る */
+  animation: wordRise 1.6s ease-out infinite 0.6s;
+}
+@keyframes wordRise {
+  0% { transform: translateY(8px) scale(0.6); opacity: 0; }
+  25% { opacity: 1; }
+  100% { transform: translateY(-28px) scale(1.1); opacity: 0; }
+}
+
+/* ───── normal / A：目を閉じて頷く ───── */
+.normalA .sprite { animation: nod 2.6s ease-in-out infinite; }
+.normalA .eye { transform: scaleY(0.14); }
+.normalA .rune { opacity: 0.4; }
+
+@keyframes nod {
+  0%, 55%, 100% { transform: translateY(0); }
+  20% { transform: translateY(3px); }
+}
+
+/* ───── failure / A：ジト目 ───── */
+.failureA .sprite { animation: slump 3.2s ease-in-out infinite; }
+.failureA .rune { opacity: 0.3; }
+.failureA .eye { animation: jito 3.6s ease-in-out infinite; }
+
+@keyframes slump {
+  0%, 100% { transform: translateY(1px) rotate(-4deg); }
+  50% { transform: translateY(2px) rotate(-6deg); }
+}
+@keyframes jito {
+  0%, 100% { transform: translateY(0.4px) scaleY(0.4); }
+  50% { transform: translateY(0.6px) scaleY(0.32); }
+}
+
+/* ───── failure / B：呆れて目を瞑る＋ため息 ───── */
+.failureB .sprite { animation: slumpDeep 3.4s ease-in-out infinite; }
+.failureB .rune { opacity: 0.2; }
+.failureB .eye { transform: scaleY(0.08); }
+
+@keyframes slumpDeep {
+  0%, 100% { transform: translateY(2px) rotate(-6deg); }
+  50% { transform: translateY(3px) rotate(-8deg); }
+}
+
+.sigh {
+  position: absolute;
+  bottom: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: #c8c4d8;
+  opacity: 0;
+  font-family: var(--pixel-font);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.25);
+  animation: sighPuff 2.2s ease-out infinite;
+}
+@keyframes sighPuff {
+  0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  20% { opacity: 0.85; }
+  100% { transform: translate(10px, -22px) scale(1.15); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hover, .sprite, .rune, .eye, .pageFlip, .word, .sigh { animation: none !important; }
+}
