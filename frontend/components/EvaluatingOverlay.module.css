@@ -1,0 +1,76 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  /* ブラーは使わず、ドット絵と質感を合わせるため濃紫のベタ＋ビネット */
+  background:
+    radial-gradient(60% 60% at 50% 45%, rgba(160, 107, 255, 0.14), transparent 70%),
+    rgba(15, 11, 30, 0.94);
+  z-index: 50;
+}
+
+.circle {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ルーン環：点描（repeating-conic-gradient）をリング状にマスク → ドット感 */
+.ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    #ffd23c 0deg 4deg,
+    transparent 4deg 12deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 7px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 7px));
+}
+.ringOuter {
+  animation: spin 6s steps(30) infinite;
+  filter: drop-shadow(0 0 8px rgba(255, 210, 60, 0.5));
+}
+.ringInner {
+  inset: 34px;
+  background: repeating-conic-gradient(
+    var(--accent) 0deg 6deg,
+    transparent 6deg 18deg
+  );
+  animation: spin 4s steps(20) infinite reverse;
+  filter: drop-shadow(0 0 8px rgba(160, 107, 255, 0.6));
+}
+
+.grimoire {
+  image-rendering: pixelated;
+  animation: bob 1.6s ease-in-out infinite;
+}
+
+.message {
+  font-family: var(--pixel-font);
+  letter-spacing: 0.1em;
+  color: #ffd23c;
+  font-size: 15px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}

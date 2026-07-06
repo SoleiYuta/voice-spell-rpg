@@ -1,0 +1,68 @@
+/* ドット魔導書テーマ。パレット: 濃紫#241038 / 表紙#6a2fb0 / クリーム#e9dcb8 / 金#ffd23c */
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 32px 16px;
+}
+
+.tag {
+  font-family: var(--pixel-font);
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  color: #ffd23c;
+  margin: 0;
+}
+
+.grimoire {
+  margin: 8px 0;
+  image-rendering: pixelated;
+}
+
+.title {
+  font-family: var(--pixel-font);
+  font-size: clamp(32px, 11vw, 56px);
+  letter-spacing: 0.06em;
+  margin: 4px 0 10px;
+  color: #e9dcb8;
+  /* 金の縁取り＋紫グロー（ドット感を残すため多重テキストシャドウ） */
+  text-shadow:
+    2px 2px 0 #241038,
+    -2px 2px 0 #241038,
+    0 0 14px var(--accent);
+}
+
+.lead {
+  font-family: var(--pixel-font);
+  font-size: 14px;
+  line-height: 1.9;
+  opacity: 0.85;
+  margin: 0 0 24px;
+}
+
+/* ピクセルボタン：角丸なし・濃紫の縁・ハードシャドウで立体感 */
+.start {
+  font-family: var(--pixel-font);
+  font-size: 20px;
+  padding: 14px 40px;
+  color: #241038;
+  background: #ffd23c;
+  border: 3px solid #241038;
+  border-radius: 2px;
+  cursor: pointer;
+  box-shadow: 5px 5px 0 #241038;
+  transition: transform 0.05s steps(2), box-shadow 0.05s steps(2);
+}
+.start:hover:not(:disabled) {
+  background: #ffe88a;
+}
+.start:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 #241038;
+}
+.start:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

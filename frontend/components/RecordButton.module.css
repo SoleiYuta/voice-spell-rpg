@@ -1,0 +1,55 @@
+/* ピクセルボタン（角丸なし・濃紫縁・ハードシャドウ）。DotGothic16。 */
+.btn {
+  font-family: var(--pixel-font);
+  font-size: 18px;
+  padding: 16px 40px;
+  margin-top: 8px;
+  color: #241038;
+  background: #ffd23c;
+  border: 3px solid #241038;
+  border-radius: 2px;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none; /* pointer で長押ししてもスクロール/選択させない */
+  box-shadow: 5px 5px 0 #241038;
+  transition: transform 0.05s steps(2), box-shadow 0.05s steps(2), background 0.1s;
+}
+.btn:hover:not(:disabled) {
+  background: #ffe88a;
+}
+.btn:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 #241038;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 録音中：赤くして押し込まれた状態＋鼓動 */
+.recording {
+  color: #e9dcb8;
+  background: #c8341a;
+  box-shadow: 2px 2px 0 #241038;
+  transform: translate(3px, 3px);
+  animation: pulse 0.8s steps(2) infinite;
+}
+.recording:hover:not(:disabled) {
+  background: #e0472a;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.35);
+  }
+}
+
+.unsupported {
+  font-family: var(--pixel-font);
+  color: #ff8a8a;
+  font-size: 14px;
+}
