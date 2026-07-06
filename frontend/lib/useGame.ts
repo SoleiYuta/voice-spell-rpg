@@ -1,9 +1,16 @@
 "use client";
 
-// ゲーム状態機械（useReducer）。詳細: wiki/AI-Grimoire/10_Web設計書 §4
-// 担当: satoryudev（#21）。page.tsx はこの hook をマウントして画面を出し分ける。
-// 流れ: title → presenting(呪文生成) → ready → recording → evaluating → result
-//        → (敵撃破&次フロア) presenting / (敵撃破&最終) gameResult / (敵残り) ready
+// ゲーム状態機械（二部構成）。詳細: wiki/AI-Grimoire/10_Web設計書
+// 担当: satoryudev（#21）。
+//
+// ■ 第1部 詠唱パート … 声で詠唱 → /evaluate → 魔法の「強さ」を確定（=武器を鍛造）
+// ■ 第2部 ヴァンサバモード … 移動＋自動攻撃で SURVIVE_SEC 秒サバイブ。敵撃破でレベルUP
+// ■ レベルUPのたびに詠唱パートへ戻り、より難しい新呪文を詠唱 → 新武器として追加 → 戦線復帰
+//
+// フロー:
+//  title → presenting(呪文生成) → ready → recording → evaluating → forged(強さ提示)
+//    → (最初/復帰) survival
+//  survival → (レベルUP) presenting …（ループ）… / (30秒生存 or HP0) gameResult
 import { useCallback, useReducer } from "react";
 import { evaluate, generateSpell, getResult } from "@/lib/api";
 import type {
@@ -21,21 +28,50 @@ export type GamePhase =
   | "ready"
   | "recording"
   | "evaluating"
-  | "result"
+  | "forged"
+  | "survival"
   | "gameResult";
 
-const MAX_FLOORS = 2; // デモは2フロア（適応を見せるのに十分）
-const enemyHpForFloor = (floor: number): number => 1.8 + (floor - 1) * 0.6;
+export const SURVIVE_SEC = 30; // 生存目標（秒）
+
+// 詠唱で鍛造した魔法＝ヴァンサバでの自動発射武器
+export interface Weapon {
+  id: string;
+  level: number;
+  spell_text: string;
+  spell_type: string;
+  damage: number; // 1発ダメージ（spell_power 由来）
+  color: string;
+}
+
+// spell_type → 色
+const TYPE_COLOR: Record<string, string> = {
+  fire: "#ff5a3c", flame: "#ff5a3c",
+  ice: "#4fc3f7", water: "#4fc3f7", frost: "#4fc3f7",
+  thunder: "#ffd54f", lightning: "#ffd54f",
+  wind: "#7be495",
+  earth: "#c8a24a",
+  dark: "#b06bff", shadow: "#b06bff", light: "#fff3b0",
+};
+export function colorForSpell(t: string): string {
+  return TYPE_COLOR[(t || "").toLowerCase()] ?? "#b06bff";
+}
+
+// spell_power(おおよそ 0.8〜2.5) → ヴァンサバのダメージ（敵HP≒18想定。強い詠唱ほど一撃）
+function damageFromPower(power: number): number {
+  return Math.max(6, Math.round(power * 12));
+}
 
 export interface GameState {
   phase: GamePhase;
   session_id: string;
-  floor: number;
+  level: number; // 現在の詠唱レベル（1始まり。レベルが上がるほど難呪文）
   spell: SpellData | null;
   last: EvaluationResult | null;
-  enemy_hp: number;
-  enemy_max_hp: number;
-  history: FloorLog[];
+  weapons: Weapon[]; // 鍛造済み武器（=詠唱した魔法）
+  history: FloorLog[]; // 診断用ログ
+  survivalStarted: boolean; // 一度でも戦線に出たか
+  outcome: "victory" | "defeat" | null;
   result: ResultData | null;
   error: string | null;
 }
@@ -43,23 +79,26 @@ export interface GameState {
 type Action =
   | { type: "RESET" }
   | { type: "START"; session_id: string }
-  | { type: "SPELL_LOADED"; spell: SpellData; floor: number; enemy_hp: number }
+  | { type: "SPELL_LOADED"; spell: SpellData; level: number }
   | { type: "BEGIN_RECORD" }
   | { type: "EVALUATING" }
-  | { type: "READY" }
-  | { type: "EVAL_DONE"; result: EvaluationResult; floor_log: FloorLog; enemy_hp: number }
+  | { type: "FORGED"; result: EvaluationResult; weapon: Weapon; floor_log: FloorLog }
+  | { type: "ENTER_SURVIVAL" }
+  | { type: "LEVEL_UP"; level: number }
+  | { type: "FINISH"; outcome: "victory" | "defeat" }
   | { type: "GAME_RESULT"; result: ResultData }
   | { type: "ERROR"; message: string };
 
 const initialState: GameState = {
   phase: "title",
   session_id: "",
-  floor: 1,
+  level: 1,
   spell: null,
   last: null,
-  enemy_hp: 0,
-  enemy_max_hp: 0,
+  weapons: [],
   history: [],
+  survivalStarted: false,
+  outcome: null,
   result: null,
   error: null,
 };
@@ -71,29 +110,25 @@ function reducer(state: GameState, action: Action): GameState {
     case "START":
       return { ...initialState, phase: "presenting", session_id: action.session_id };
     case "SPELL_LOADED":
-      return {
-        ...state,
-        phase: "ready",
-        spell: action.spell,
-        floor: action.floor,
-        enemy_hp: action.enemy_hp,
-        enemy_max_hp: action.enemy_hp,
-        last: null,
-      };
+      return { ...state, phase: "ready", spell: action.spell, level: action.level, last: null };
     case "BEGIN_RECORD":
       return { ...state, phase: "recording", error: null };
     case "EVALUATING":
       return { ...state, phase: "evaluating" };
-    case "READY":
-      return { ...state, phase: "ready", last: null };
-    case "EVAL_DONE":
+    case "FORGED":
       return {
         ...state,
-        phase: "result",
+        phase: "forged",
         last: action.result,
-        enemy_hp: action.enemy_hp,
+        weapons: [...state.weapons, action.weapon],
         history: [...state.history, action.floor_log],
       };
+    case "ENTER_SURVIVAL":
+      return { ...state, phase: "survival", survivalStarted: true };
+    case "LEVEL_UP":
+      return { ...state, phase: "presenting", level: action.level };
+    case "FINISH":
+      return { ...state, outcome: action.outcome };
     case "GAME_RESULT":
       return { ...state, phase: "gameResult", result: action.result };
     case "ERROR":
@@ -123,16 +158,16 @@ function buildProfile(history: FloorLog[]): PlayerProfile {
 export function useGame() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // 内部：呪文を生成して ready へ（履歴があれば適応プロファイルを渡す）
+  // 呪文を生成して ready へ（レベルが上がるほど難しく＝floor_id にレベルを渡す）
   const loadSpell = useCallback(
-    async (sessionId: string, floor: number, history: FloorLog[]) => {
+    async (sessionId: string, level: number, history: FloorLog[]) => {
       try {
         const spell = await generateSpell({
           session_id: sessionId,
-          floor_id: `floor-${floor}`,
+          floor_id: `floor-${level}`,
           player_profile: buildProfile(history),
         });
-        dispatch({ type: "SPELL_LOADED", spell, floor, enemy_hp: enemyHpForFloor(floor) });
+        dispatch({ type: "SPELL_LOADED", spell, level });
       } catch (e) {
         dispatch({ type: "ERROR", message: e instanceof Error ? e.message : String(e) });
       }
@@ -151,7 +186,7 @@ export function useGame() {
 
   const beginRecord = useCallback(() => dispatch({ type: "BEGIN_RECORD" }), []);
 
-  // 録音Blobを送って評価 → ダメージ＆履歴記録
+  // 録音Blobを送って評価 → 武器を鍛造（forged へ）
   const cast = useCallback(
     async (audio: Blob) => {
       if (!state.spell) return;
@@ -161,10 +196,10 @@ export function useGame() {
           audio,
           spell_text: state.spell.spell_text,
           session_id: state.session_id,
-          floor_id: `floor-${state.floor}`,
+          floor_id: `floor-${state.level}`,
         });
         const floor_log: FloorLog = {
-          floor_id: `floor-${state.floor}`,
+          floor_id: `floor-${state.level}`,
           spell_text: state.spell.spell_text,
           match_rate: result.match_rate,
           volume: result.volume,
@@ -173,34 +208,49 @@ export function useGame() {
           hesitation_count: result.hesitation_count,
           spell_power: result.spell_power,
         };
-        const enemy_hp = Math.max(0, Math.round((state.enemy_hp - result.spell_power) * 100) / 100);
-        dispatch({ type: "EVAL_DONE", result, floor_log, enemy_hp });
+        const weapon: Weapon = {
+          id: `w-${state.level}-${state.weapons.length}`,
+          level: state.level,
+          spell_text: state.spell.spell_text,
+          spell_type: state.spell.spell_type,
+          damage: damageFromPower(result.spell_power),
+          color: colorForSpell(state.spell.spell_type),
+        };
+        dispatch({ type: "FORGED", result, weapon, floor_log });
       } catch (e) {
         dispatch({ type: "ERROR", message: e instanceof Error ? e.message : String(e) });
       }
     },
-    [state.spell, state.session_id, state.floor, state.enemy_hp],
+    [state.spell, state.session_id, state.level, state.weapons.length],
   );
 
-  // result 画面から次へ
-  const next = useCallback(async () => {
-    if (state.enemy_hp > 0) {
-      dispatch({ type: "READY" }); // 敵が残っている → 同じ呪文でもう一度
-      return;
-    }
-    if (state.floor >= MAX_FLOORS) {
+  // forged 画面 →（初回 or 復帰）戦線へ
+  const enterSurvival = useCallback(() => dispatch({ type: "ENTER_SURVIVAL" }), []);
+
+  // ヴァンサバ側から：レベルUP → 次の（難しい）呪文の詠唱パートへ
+  const levelUp = useCallback(
+    (nextLevel: number) => {
+      dispatch({ type: "LEVEL_UP", level: nextLevel });
+      void loadSpell(state.session_id, nextLevel, state.history);
+    },
+    [loadSpell, state.session_id, state.history],
+  );
+
+  // ヴァンサバ側から：30秒生存 or HP0 → 診断へ
+  const finish = useCallback(
+    async (outcome: "victory" | "defeat") => {
+      dispatch({ type: "FINISH", outcome });
       try {
         const result = await getResult({ session_id: state.session_id, floors: state.history });
         dispatch({ type: "GAME_RESULT", result });
       } catch (e) {
         dispatch({ type: "ERROR", message: e instanceof Error ? e.message : String(e) });
       }
-    } else {
-      await loadSpell(state.session_id, state.floor + 1, state.history); // 次フロア＝適応呪文
-    }
-  }, [state.enemy_hp, state.floor, state.session_id, state.history, loadSpell]);
+    },
+    [state.session_id, state.history],
+  );
 
   const reset = useCallback(() => dispatch({ type: "RESET" }), []);
 
-  return { state, start, beginRecord, cast, next, reset, MAX_FLOORS };
+  return { state, start, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC };
 }
