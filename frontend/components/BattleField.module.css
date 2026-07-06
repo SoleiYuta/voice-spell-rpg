@@ -1,0 +1,122 @@
+/* プレイアブルなバトルフィールド（ヴァンサバ風）。
+   プレイヤーをWASD/矢印/テンキーで移動、敵は継続湧きでプレイヤーへ前進、
+   詠唱結果でキャラの向き方向へAoE（3段階ダメージ＋属性別付随効果）。担当: harukichi */
+
+.field {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  height: 360px;
+  margin: 0 auto;
+  border: 3px solid var(--accent);
+  overflow: hidden;
+  image-rendering: pixelated;
+  outline: none;
+  background-color: #0b0818;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px);
+  background-size: 30px 30px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  cursor: default;
+}
+
+.player {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* 向きを示す照準ライン */
+.aim {
+  position: absolute;
+  height: 2px;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 80%, transparent), transparent);
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.enemy {
+  position: absolute;
+  font-size: 22px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}
+.frozen { filter: drop-shadow(0 0 5px #5fcaff) saturate(1.3) brightness(1.15); }
+.confused { filter: drop-shadow(0 0 5px #a23bff); }
+.enemyStatus {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* AoE当たり判定リング（膨らむ→萎む） */
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 3;
+  border: 2px solid var(--fx-color, #ff7a33);
+  background: radial-gradient(circle, color-mix(in srgb, var(--fx-color, #ff7a33) 30%, transparent), transparent 70%);
+}
+
+/* 燃える床 */
+.floor {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1;
+  border: 2px dashed color-mix(in srgb, var(--fx-color, #ff7a33) 70%, transparent);
+  background: radial-gradient(circle, color-mix(in srgb, var(--fx-color, #ff7a33) 20%, transparent), transparent 72%);
+  animation: floorPulse 0.9s steps(4) infinite;
+}
+@keyframes floorPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.85; } }
+
+/* 発射閃光（背景から浮かせる） */
+.blast {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 3;
+  mix-blend-mode: screen;
+  opacity: 0;
+  background: radial-gradient(circle, #fff 0%, var(--fx-color, #ff7a33) 42%, transparent 70%);
+  animation: blast 0.5s ease-out forwards;
+}
+@keyframes blast {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  25% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2); }
+}
+
+.hud {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  color: var(--fg);
+  opacity: 0.85;
+  z-index: 5;
+  text-shadow: 1px 1px 0 #000;
+}
+.hint {
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  font-size: 10px;
+  opacity: 0.5;
+  z-index: 5;
+}

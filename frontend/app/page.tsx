@@ -14,7 +14,7 @@
 import { useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useGame } from "@/lib/useGame";
-import BattleArena from "@/components/BattleArena";
+import BattleField from "@/components/BattleField";
 import type { SpellType } from "@/components/SpellEffect";
 import EvaluationBars from "@/components/EvaluationBars";
 import GMComment from "@/components/GMComment";
@@ -37,11 +37,6 @@ function mapSpellType(raw: string | undefined): SpellType {
 function intensityFromMatchRate(matchRate: number): number {
   const p = matchRate <= 1 ? matchRate : matchRate / 100;
   return Math.max(1, Math.min(5, Math.ceil(p * 5)));
-}
-
-// フロア毎の敵ビジュアル（絵文字プレースホルダ）
-function enemyEmojiForFloor(floor: number): string {
-  return floor >= 2 ? "🐉" : "👾";
 }
 
 export default function Home() {
@@ -114,13 +109,10 @@ export default function Home() {
             フロア {state.floor} / {MAX_FLOORS}
           </p>
 
-          <BattleArena
-            enemy_hp={state.enemy_hp}
-            max_hp={state.enemy_max_hp}
-            enemy_emoji={enemyEmojiForFloor(state.floor)}
+          <BattleField
             spell_type={spellType}
-            intensity={inResult ? intensityFromMatchRate(state.last!.match_rate) : undefined}
-            spell_power={inResult ? state.last!.spell_power : undefined}
+            level={inResult ? intensityFromMatchRate(state.last!.match_rate) : 3}
+            castNonce={state.history.length}
             charging={state.phase === "recording"}
           />
 
