@@ -38,7 +38,7 @@ export default function Home() {
       {(state.phase === "ready" || state.phase === "recording") && state.spell && (
         <div style={{ textAlign: "center" }}>
           <p style={{ opacity: 0.8, fontFamily: "var(--pixel-font)", fontSize: 13 }}>
-            {state.survivalStarted ? `レベル${state.level}・新呪文を詠唱！` : "最初の呪文を詠唱せよ"}
+            {state.survivalStarted ? `⬆ レベル${state.level}到達！次の呪文を詠唱` : "最初の呪文を詠唱せよ"}
           </p>
           <SpellCard spell={state.spell} autoSpeak={state.phase === "ready"} />
           <div style={{ marginTop: 8 }}>
@@ -115,7 +115,7 @@ export default function Home() {
               color: state.outcome === "victory" ? "#5ce08a" : "tomato",
             }}
           >
-            {state.outcome === "victory" ? `🏆 ${SURVIVE_SEC}秒 生存成功！` : "💀 力尽きた……"}
+            {state.outcome === "victory" ? "🏆 全レベル制覇！" : `💀 レベル${state.level}で力尽きた……`}
           </p>
           <ResultScreen key={state.result.session_id} result={state.result} onRestart={reset} />
         </>
