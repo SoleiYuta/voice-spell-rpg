@@ -1,0 +1,135 @@
+/* リザルト画面。診断タイプ・魔導書＋総評・ベスト詠唱・統計。
+   ドット統一のためピクセル枠と DotGothic16 を採用。担当: harukichi (#18) */
+
+.screen {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-family: var(--pixel-font);
+}
+
+/* 診断タイプ見出し */
+.headline {
+  text-align: center;
+  padding: 12px 10px;
+  border: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.headlineLabel {
+  font-size: 12px;
+  opacity: 0.75;
+  letter-spacing: 0.14em;
+}
+
+.headlineType {
+  font-size: 22px;
+  color: var(--accent);
+  margin-top: 2px;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* セクション枠（ベスト詠唱・統計） */
+.section {
+  padding: 12px;
+  border: 2px solid var(--accent);
+  background: var(--bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.sectionTitle {
+  font-size: 11px;
+  opacity: 0.75;
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+}
+
+/* ベスト詠唱 */
+.bestSpell {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.bestPower {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.bestPowerLabel {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.bestPowerValue {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* 統計行 */
+.statRow {
+  margin-bottom: 8px;
+}
+
+.statRow:last-child {
+  margin-bottom: 0;
+}
+
+.statHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+
+.statValue {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+}
+
+/* ████████░░ ピクセルバー */
+.segTrack {
+  display: flex;
+  gap: 2px;
+}
+
+.seg {
+  flex: 1;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.segOn {
+  background: var(--accent);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* リスタートボタン */
+.restart {
+  align-self: center;
+  margin-top: 4px;
+  padding: 10px 22px;
+  font-family: var(--pixel-font);
+  font-size: 14px;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+.restart:active {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
