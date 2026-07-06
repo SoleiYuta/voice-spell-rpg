@@ -1,0 +1,39 @@
+/* プレイヤーキャラ（魔法使い）のドット絵。SVG矩形で1セル=1ドット描画。
+   right向き基準。facing="left" で左右反転。担当: harukichi */
+
+.sprite {
+  display: block;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+}
+
+/* 待機：ゆらっと浮遊 */
+.idle {
+  animation: bob 2.2s ease-in-out infinite;
+}
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* 詠唱チャージ：杖が光り、体が脈打つ */
+.charging {
+  animation: charge 0.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px var(--accent)) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+}
+@keyframes charge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+/* 左向き（右向き基準を反転） */
+.left {
+  transform: scaleX(-1);
+}
+.left.charging {
+  animation: chargeLeft 0.5s ease-in-out infinite;
+}
+@keyframes chargeLeft {
+  0%, 100% { transform: scaleX(-1) scale(1); }
+  50% { transform: scaleX(-1) scale(1.08); }
+}

@@ -1,0 +1,102 @@
+/* 群れアリーナ（ヴァンサバ風）。敵の群れがプレイヤーへ前進し、詠唱でAoE一掃。
+   useGame は不変。enemy_hp/enemy_max_hp の比率を「群れの残数」に翻訳して描画する。
+   演出は /dev/field の資産を踏襲（CSS Module で隔離）。担当: harukichi */
+
+.arena {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  height: 300px;
+  margin: 0 auto;
+  border: 3px solid var(--accent);
+  border-radius: 0;
+  overflow: hidden;
+  image-rendering: pixelated;
+  background-color: #0b0818;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px);
+  background-size: 28px 28px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* プレイヤー（画面中央下） */
+.player {
+  position: absolute;
+  font-size: 30px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px var(--accent));
+  z-index: 3;
+}
+
+/* 詠唱中はプレイヤーが力をためる */
+.playerCharging {
+  animation: charge 0.6s ease-in-out infinite;
+}
+@keyframes charge {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(1.15); filter: drop-shadow(0 0 14px var(--accent)); }
+}
+
+/* 敵（群れの1体） */
+.enemy {
+  position: absolute;
+  font-size: 22px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  transition: opacity 0.25s;
+}
+
+/* AoEで消える敵 */
+.enemyDying {
+  animation: enemyDie 0.4s steps(4) forwards;
+}
+@keyframes enemyDie {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.6) rotate(20deg); }
+}
+
+/* AoE弾（キャラの向き方向へ扇状に飛ぶ）。位置/角度/色は JS から指定 */
+.aoe {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border: 2px solid var(--fx-color, #ff7a33);
+  background: radial-gradient(circle, color-mix(in srgb, var(--fx-color, #ff7a33) 40%, transparent), transparent 70%);
+  z-index: 2;
+}
+
+/* 発射方向を示すコーン（詠唱結果の瞬間に一閃） */
+.beam {
+  position: absolute;
+  transform-origin: 0 50%;
+  height: 3px;
+  background: linear-gradient(90deg, #fff, var(--fx-color, #ff7a33) 60%, transparent);
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  animation: beamFlash 0.4s ease-out forwards;
+}
+@keyframes beamFlash {
+  0% { opacity: 0; }
+  20% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+
+/* HUD：残りの群れ数 */
+.hud {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  color: var(--fg);
+  opacity: 0.85;
+  z-index: 4;
+  text-shadow: 1px 1px 0 #000;
+}

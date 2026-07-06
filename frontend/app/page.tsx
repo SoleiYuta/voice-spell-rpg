@@ -1,11 +1,48 @@
 "use client";
 
-// 最低限のプレイUI（#6）。useGameを配線して「出題→詠唱→評価→ダメージ→診断」を1周通す。
-// 録音はこのページにインラインで実装（lib/audio.ts #22 とは独立。本実装が来たら差し替え可）。
-// 見た目は最小限。各コンポーネント(TitleScreen/SpellCard/BattleScene等)は後で差し替える。
+// ゲーム本体（統合UI）。useGame の状態機械に合わせて、既存のドット風コンポーネントを配線する。
+// - BattleScene    … 戦闘画面（敵/HP/ヒット演出。result時に spell_power で発火）
+// - SpellEffect    … 属性エフェクト（BattleScene 内部で使用）
+// - EvaluationBars … 詠唱評価バー（result時、compact+pixel）
+// - GMComment      … Gemini総評の魔導書コメント（pixel + mood/variant）
+// - ResultScreen   … 最終リザルト（診断タイプ/総評/ベスト詠唱/統計）
+//
+// 録音はインライン実装のまま（lib/audio.ts #22 が入ったら差し替え可）。
+// #6 の最小限UIを、私(harukichi)の作ったコンポーネントに差し替え。
+// 差し替え担当外の可能性があるので、develop 直接ではなく feature ブランチで実装。
+
 import { useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useGame } from "@/lib/useGame";
+import BattleArena from "@/components/BattleArena";
+import type { SpellType } from "@/components/SpellEffect";
+import EvaluationBars from "@/components/EvaluationBars";
+import GMComment from "@/components/GMComment";
+import ResultScreen from "@/components/ResultScreen";
+import { moodFromMatchRate } from "@/components/PixelGrimoire";
+
+// バックエンドの spell_type 文字列を SpellEffect の型に寄せる（未知は炎にフォールバック）
+const SPELL_TYPE_MAP: Record<string, SpellType> = {
+  fire: "fire", flame: "fire", 炎: "fire",
+  ice: "ice", frost: "ice", 氷: "ice",
+  thunder: "thunder", lightning: "thunder", 雷: "thunder",
+  dark: "dark", shadow: "dark", 闇: "dark",
+};
+function mapSpellType(raw: string | undefined): SpellType {
+  if (!raw) return "fire";
+  return SPELL_TYPE_MAP[raw.toLowerCase()] ?? SPELL_TYPE_MAP[raw] ?? "fire";
+}
+
+// match_rate(0..1 or 0..100) から派手さ Lv(1..5) を算出
+function intensityFromMatchRate(matchRate: number): number {
+  const p = matchRate <= 1 ? matchRate : matchRate / 100;
+  return Math.max(1, Math.min(5, Math.ceil(p * 5)));
+}
+
+// フロア毎の敵ビジュアル（絵文字プレースホルダ）
+function enemyEmojiForFloor(floor: number): string {
+  return floor >= 2 ? "🐉" : "👾";
+}
 
 export default function Home() {
   const { state, start, beginRecord, cast, next, reset, MAX_FLOORS } = useGame();
@@ -46,9 +83,18 @@ export default function Home() {
         ? "結果を見る"
         : "次のフロアへ";
 
+  // 戦闘画面(BattleScene)を出すフェーズ
+  const showBattle =
+    state.phase === "ready" ||
+    state.phase === "recording" ||
+    state.phase === "evaluating" ||
+    state.phase === "result";
+  const inResult = state.phase === "result" && !!state.last;
+  const spellType = mapSpellType(state.spell?.spell_type);
+
   return (
-    <main style={{ maxWidth: 560, margin: "0 auto", padding: 24, textAlign: "center" }}>
-      <h1 style={{ color: "var(--accent)" }}>AI Grimoire</h1>
+    <main style={{ maxWidth: 640, margin: "0 auto", padding: "20px 16px", textAlign: "center" }}>
+      <h1 style={{ color: "var(--accent)", fontFamily: "var(--pixel-font)" }}>AI Grimoire</h1>
 
       {state.error && <p style={{ color: "tomato" }}>エラー: {state.error}</p>}
       {micError && <p style={{ color: "tomato" }}>{micError}</p>}
@@ -62,101 +108,92 @@ export default function Home() {
 
       {state.phase === "presenting" && <p>魔導書が呪文を授けている……</p>}
 
-      {(state.phase === "ready" || state.phase === "recording") && state.spell && (
+      {showBattle && state.spell && (
         <>
-          <p style={{ opacity: 0.7 }}>フロア {state.floor} / {MAX_FLOORS}</p>
-          <EnemyBar hp={state.enemy_hp} max={state.enemy_max_hp} />
+          <p style={{ opacity: 0.7, fontFamily: "var(--pixel-font)" }}>
+            フロア {state.floor} / {MAX_FLOORS}
+          </p>
+
+          <BattleArena
+            enemy_hp={state.enemy_hp}
+            max_hp={state.enemy_max_hp}
+            enemy_emoji={enemyEmojiForFloor(state.floor)}
+            spell_type={spellType}
+            intensity={inResult ? intensityFromMatchRate(state.last!.match_rate) : undefined}
+            spell_power={inResult ? state.last!.spell_power : undefined}
+            charging={state.phase === "recording"}
+          />
+
           <Card>
-            <div style={{ fontSize: 13, opacity: 0.6 }}>
+            <div style={{ fontSize: 12, opacity: 0.6, fontFamily: "var(--pixel-font)" }}>
               {state.spell.spell_type} ・ 難易度 {state.spell.difficulty}
             </div>
-            <div style={{ fontSize: 22, margin: "8px 0" }}>「{state.spell.spell_text}」</div>
+            <div style={{ fontSize: 20, margin: "6px 0", fontFamily: "var(--pixel-font)" }}>
+              「{state.spell.spell_text}」
+            </div>
           </Card>
-          {state.phase === "ready" ? (
+
+          {state.phase === "ready" && (
             <button style={btn} onClick={startRecording}>🎤 詠唱する（録音開始）</button>
-          ) : (
+          )}
+          {state.phase === "recording" && (
             <button style={{ ...btn, background: "tomato" }} onClick={stopRecording}>
               ■ 詠唱おわり（送信）
             </button>
           )}
+          {state.phase === "evaluating" && <p>魔導書が声を見極めている……</p>}
         </>
       )}
 
-      {state.phase === "evaluating" && <p>魔導書が声を見極めている……</p>}
-
-      {state.phase === "result" && state.last && (
+      {inResult && (
         <>
-          <EnemyBar hp={state.enemy_hp} max={state.enemy_max_hp} />
-          <Card>
-            <div style={{ fontSize: 13, opacity: 0.6 }}>認識: 「{state.last.transcript}」</div>
-            <Bar label="一致率" v={state.last.match_rate} />
-            <div style={{ fontSize: 13, opacity: 0.8, margin: "6px 0" }}>
-              声量 {state.last.volume} ・ {state.last.speed_wpm} wpm ・ 詰まり {state.last.hesitation_count}
-            </div>
-            <div style={{ fontSize: 18, color: "var(--accent)" }}>威力 {state.last.spell_power}</div>
-            <p style={{ fontStyle: "italic", marginTop: 10 }}>“{state.last.gm_comment}”</p>
-          </Card>
-          {state.enemy_hp <= 0 && <p>✨ 敵を撃破した！</p>}
+          <div style={{ margin: "14px 0", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+            <EvaluationBars result={state.last!} pixel compact />
+            <GMComment
+              comment={state.last!.gm_comment}
+              pixel
+              mood={moodFromMatchRate(state.last!.match_rate)}
+            />
+          </div>
+          {state.enemy_hp <= 0 && (
+            <p style={{ color: "var(--accent)", fontFamily: "var(--pixel-font)" }}>✨ 敵を撃破した！</p>
+          )}
           <button style={btn} onClick={next}>{nextLabel}</button>
         </>
       )}
 
       {state.phase === "gameResult" && state.result && (
-        <>
-          <h2 style={{ color: "var(--accent)" }}>あなたは「{state.result.type_name}」</h2>
-          <Card>
-            <p style={{ fontSize: 17 }}>{state.result.ai_verdict}</p>
-            <div style={{ fontSize: 13, opacity: 0.7, marginTop: 10 }}>
-              ベスト詠唱: 「{state.result.best_floor.spell_text}」(威力 {state.result.best_floor.spell_power})
-            </div>
-          </Card>
-          <button style={btn} onClick={reset}>もう一度遊ぶ</button>
-        </>
+        <ResultScreen key={state.result.session_id} result={state.result} onRestart={reset} />
       )}
     </main>
   );
 }
 
 const btn: CSSProperties = {
-  marginTop: 16,
-  padding: "12px 28px",
-  fontSize: 16,
+  marginTop: 14,
+  padding: "10px 24px",
+  fontSize: 15,
   color: "#fff",
   background: "var(--accent)",
   border: "none",
   borderRadius: 8,
   cursor: "pointer",
+  fontFamily: "var(--pixel-font)",
+  boxShadow: "3px 3px 0 rgba(0,0,0,0.4)",
 };
 
 function Card({ children }: { children: ReactNode }) {
   return (
-    <div style={{ margin: "16px 0", padding: 18, border: "1px solid var(--accent)", borderRadius: 12 }}>
+    <div
+      style={{
+        margin: "12px 0",
+        padding: 14,
+        border: "2px solid var(--accent)",
+        background: "color-mix(in srgb, var(--accent) 8%, var(--bg))",
+        boxShadow: "0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent)",
+      }}
+    >
       {children}
-    </div>
-  );
-}
-
-function EnemyBar({ hp, max }: { hp: number; max: number }) {
-  const pct = max > 0 ? Math.max(0, (hp / max) * 100) : 0;
-  return (
-    <div style={{ margin: "8px 0" }}>
-      <div style={{ fontSize: 12, opacity: 0.7, textAlign: "left" }}>敵 HP</div>
-      <div style={{ height: 12, background: "#333", borderRadius: 6, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: "tomato", transition: "width .4s" }} />
-      </div>
-    </div>
-  );
-}
-
-function Bar({ label, v }: { label: string; v: number }) {
-  return (
-    <div style={{ margin: "4px 0", textAlign: "left" }}>
-      <span style={{ fontSize: 12, opacity: 0.7 }}>
-        {label} {Math.round(v * 100)}%
-      </span>
-      <div style={{ height: 8, background: "#333", borderRadius: 4, overflow: "hidden" }}>
-        <div style={{ width: `${Math.min(100, v * 100)}%`, height: "100%", background: "var(--accent)" }} />
-      </div>
     </div>
   );
 }
