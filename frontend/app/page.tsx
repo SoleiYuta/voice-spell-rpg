@@ -1,75 +1,28 @@
 "use client";
 
-// ゲーム本体（統合UI）。useGame の状態機械に合わせて、既存のドット風コンポーネントを配線する。
-// - BattleScene    … 戦闘画面（敵/HP/ヒット演出。result時に spell_power で発火）
-// - SpellEffect    … 属性エフェクト（BattleScene 内部で使用）
-// - EvaluationBars … 詠唱評価バー（result時、compact+pixel）
-// - GMComment      … Gemini総評の魔導書コメント（pixel + mood/variant）
-// - ResultScreen   … 最終リザルト（診断タイプ/総評/ベスト詠唱/統計）
-//
-// 録音はインライン実装のまま（lib/audio.ts #22 が入ったら差し替え可）。
-// #6 の最小限UIを、私(harukichi)の作ったコンポーネントに差し替え。
-// 差し替え担当外の可能性があるので、develop 直接ではなく feature ブランチで実装。
+// ゲーム本体（統合UI）。kazuma660 の詠唱UI（#3 #17 #22）をメインに、useGame へ配線する。
+// - TitleScreen      … タイトル（onStart → start）
+// - SpellCard        … 出題呪文の表示（+TTS読み上げ）
+// - RecordButton     … 押して詠唱→離して送信（lib/audio.ts / onBegin→beginRecord, onCast→cast）
+// - EvaluatingOverlay… 生成中/評価中の全画面ローディング
+// 評価バー(EvaluationBars)・総評(GMComment)・リザルト(ResultScreen) は既存(harukichi)を流用。
+// 敵HPは kazuma のドット調に合わせた最小バー(EnemyBar)で表示（BattleField は不採用）。
 
-import { useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import { useState } from "react";
+import type { CSSProperties } from "react";
 import { useGame } from "@/lib/useGame";
-import BattleField from "@/components/BattleField";
-import type { SpellType } from "@/components/SpellEffect";
 import EvaluationBars from "@/components/EvaluationBars";
 import GMComment from "@/components/GMComment";
 import ResultScreen from "@/components/ResultScreen";
+import TitleScreen from "@/components/TitleScreen";
+import SpellCard from "@/components/SpellCard";
+import RecordButton from "@/components/RecordButton";
+import EvaluatingOverlay from "@/components/EvaluatingOverlay";
 import { moodFromMatchRate } from "@/components/PixelGrimoire";
-
-// バックエンドの spell_type 文字列を SpellEffect の型に寄せる（未知は炎にフォールバック）
-const SPELL_TYPE_MAP: Record<string, SpellType> = {
-  fire: "fire", flame: "fire", 炎: "fire",
-  ice: "ice", frost: "ice", 氷: "ice",
-  thunder: "thunder", lightning: "thunder", 雷: "thunder",
-  dark: "dark", shadow: "dark", 闇: "dark",
-};
-function mapSpellType(raw: string | undefined): SpellType {
-  if (!raw) return "fire";
-  return SPELL_TYPE_MAP[raw.toLowerCase()] ?? SPELL_TYPE_MAP[raw] ?? "fire";
-}
-
-// match_rate(0..1 or 0..100) から派手さ Lv(1..5) を算出
-function intensityFromMatchRate(matchRate: number): number {
-  const p = matchRate <= 1 ? matchRate : matchRate / 100;
-  return Math.max(1, Math.min(5, Math.ceil(p * 5)));
-}
 
 export default function Home() {
   const { state, start, beginRecord, cast, next, reset, MAX_FLOORS } = useGame();
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<BlobPart[]>([]);
   const [micError, setMicError] = useState<string | null>(null);
-
-  async function startRecording() {
-    setMicError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        cast(new Blob(chunksRef.current, { type: "audio/webm" }));
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      beginRecord();
-    } catch {
-      setMicError("マイクを使えませんでした（ブラウザの許可が必要です）");
-    }
-  }
-
-  function stopRecording() {
-    recorderRef.current?.stop();
-    recorderRef.current = null;
-  }
 
   const nextLabel =
     state.enemy_hp > 0
@@ -78,62 +31,50 @@ export default function Home() {
         ? "結果を見る"
         : "次のフロアへ";
 
-  // 戦闘画面(BattleScene)を出すフェーズ
-  const showBattle =
+  // バトル画面（呪文カード＋敵HP）を出すフェーズ
+  const inBattle =
     state.phase === "ready" ||
     state.phase === "recording" ||
     state.phase === "evaluating" ||
     state.phase === "result";
   const inResult = state.phase === "result" && !!state.last;
-  const spellType = mapSpellType(state.spell?.spell_type);
 
   return (
-    <main style={{ maxWidth: 640, margin: "0 auto", padding: "20px 16px", textAlign: "center" }}>
-      <h1 style={{ color: "var(--accent)", fontFamily: "var(--pixel-font)" }}>AI Grimoire</h1>
-
+    <main style={{ maxWidth: 560, margin: "0 auto", padding: "20px 16px", textAlign: "center" }}>
       {state.error && <p style={{ color: "tomato" }}>エラー: {state.error}</p>}
       {micError && <p style={{ color: "tomato" }}>{micError}</p>}
 
-      {state.phase === "title" && (
-        <>
-          <p style={{ opacity: 0.7 }}>声で呪文を詠唱して戦え。AIがお前の声を見抜く。</p>
-          <button style={btn} onClick={start}>はじめる</button>
-        </>
-      )}
+      {state.phase === "title" && <TitleScreen onStart={start} />}
 
-      {state.phase === "presenting" && <p>魔導書が呪文を授けている……</p>}
+      {/* 呪文生成中（presenting）は全画面オーバーレイ */}
+      <EvaluatingOverlay
+        visible={state.phase === "presenting"}
+        message="魔導書が呪文を授けている……"
+      />
 
-      {showBattle && state.spell && (
+      {inBattle && state.spell && (
         <>
-          <p style={{ opacity: 0.7, fontFamily: "var(--pixel-font)" }}>
+          <p style={{ opacity: 0.7, fontFamily: "var(--pixel-font)", fontSize: 13 }}>
             フロア {state.floor} / {MAX_FLOORS}
           </p>
 
-          <BattleField
-            spell_type={spellType}
-            level={inResult ? intensityFromMatchRate(state.last!.match_rate) : 3}
-            castNonce={state.history.length}
-            charging={state.phase === "recording"}
-          />
+          <EnemyBar hp={state.enemy_hp} max={state.enemy_max_hp} />
 
-          <Card>
-            <div style={{ fontSize: 12, opacity: 0.6, fontFamily: "var(--pixel-font)" }}>
-              {state.spell.spell_type} ・ 難易度 {state.spell.difficulty}
-            </div>
-            <div style={{ fontSize: 20, margin: "6px 0", fontFamily: "var(--pixel-font)" }}>
-              「{state.spell.spell_text}」
-            </div>
-          </Card>
+          <SpellCard spell={state.spell} autoSpeak={state.phase === "ready"} />
 
-          {state.phase === "ready" && (
-            <button style={btn} onClick={startRecording}>🎤 詠唱する（録音開始）</button>
+          {(state.phase === "ready" || state.phase === "recording") && (
+            <div style={{ textAlign: "center", marginTop: 8 }}>
+              <RecordButton
+                recording={state.phase === "recording"}
+                onBegin={() => {
+                  setMicError(null);
+                  beginRecord();
+                }}
+                onCast={cast}
+                onError={setMicError}
+              />
+            </div>
           )}
-          {state.phase === "recording" && (
-            <button style={{ ...btn, background: "tomato" }} onClick={stopRecording}>
-              ■ 詠唱おわり（送信）
-            </button>
-          )}
-          {state.phase === "evaluating" && <p>魔導書が声を見極めている……</p>}
         </>
       )}
 
@@ -154,10 +95,46 @@ export default function Home() {
         </>
       )}
 
+      {/* 評価中（evaluating）は上に全画面オーバーレイ */}
+      <EvaluatingOverlay visible={state.phase === "evaluating"} />
+
       {state.phase === "gameResult" && state.result && (
         <ResultScreen key={state.result.session_id} result={state.result} onRestart={reset} />
       )}
     </main>
+  );
+}
+
+// 敵HPバー（kazuma のドット調に合わせた最小表示。角ばった枠＋ピクセルフォント）
+function EnemyBar({ hp, max }: { hp: number; max: number }) {
+  const pct = max > 0 ? Math.max(0, (hp / max) * 100) : 0;
+  const defeated = hp <= 0;
+  return (
+    <div style={{ margin: "10px auto", maxWidth: 420 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontFamily: "var(--pixel-font)",
+          fontSize: 12,
+          opacity: 0.85,
+          marginBottom: 4,
+        }}
+      >
+        <span>{defeated ? "敵 撃破！" : "敵 HP"}</span>
+        <span>{Math.max(0, Math.ceil(pct))}%</span>
+      </div>
+      <div style={{ height: 14, background: "rgba(0,0,0,0.35)", border: "2px solid var(--accent)", overflow: "hidden" }}>
+        <div
+          style={{
+            width: `${pct}%`,
+            height: "100%",
+            background: defeated ? "#c8341a" : "var(--accent)",
+            transition: "width .45s ease-out",
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -173,19 +150,3 @@ const btn: CSSProperties = {
   fontFamily: "var(--pixel-font)",
   boxShadow: "3px 3px 0 rgba(0,0,0,0.4)",
 };
-
-function Card({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        margin: "12px 0",
-        padding: 14,
-        border: "2px solid var(--accent)",
-        background: "color-mix(in srgb, var(--accent) 8%, var(--bg))",
-        boxShadow: "0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent)",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
