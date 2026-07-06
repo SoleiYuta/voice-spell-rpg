@@ -5,9 +5,9 @@
 //   → forged で威力(=武器)を提示し「戦線へ」。
 // ■ 第2部 ヴァンサバモード: SurvivalMode（Canvasアクション）。撃破でレベルUP。
 // ■ レベルUP時は SurvivalMode を凍結(paused)したまま、上に詠唱UIを重ねて新呪文を詠唱→復帰。
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
-import { useGame } from "@/lib/useGame";
+import { useGame, colorForSpell, type Weapon } from "@/lib/useGame";
 import EvaluationBars from "@/components/EvaluationBars";
 import GMComment from "@/components/GMComment";
 import ResultScreen from "@/components/ResultScreen";
@@ -20,10 +20,66 @@ import { moodFromMatchRate } from "@/components/PixelGrimoire";
 
 const CHANT_PHASES = new Set(["presenting", "ready", "recording", "evaluating", "forged"]);
 
+// デバッグ用：全属性を一度に装備してエフェクトを見るためのロードアウト
+const DEBUG_WEAPONS: Weapon[] = [
+  { id: "dbg-fire", level: 1, spell_text: "炎", spell_type: "fire", damage: 25, color: colorForSpell("fire") },
+  { id: "dbg-ice", level: 2, spell_text: "氷", spell_type: "ice", damage: 25, color: colorForSpell("ice") },
+  { id: "dbg-thunder", level: 3, spell_text: "雷", spell_type: "thunder", damage: 25, color: colorForSpell("thunder") },
+  { id: "dbg-dark", level: 4, spell_text: "闇", spell_type: "dark", damage: 25, color: colorForSpell("dark") },
+  { id: "dbg-light", level: 5, spell_text: "光", spell_type: "light", damage: 25, color: colorForSpell("light") },
+  { id: "dbg-wind", level: 6, spell_text: "風", spell_type: "wind", damage: 25, color: colorForSpell("wind") },
+];
+const DEBUG_CODE = "wwssadadab"; // タイトル画面でこれを打つとデバッグへ
+
 export default function Home() {
   const { state, start, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC } =
     useGame();
   const [micError, setMicError] = useState<string | null>(null);
+  const [debug, setDebug] = useState(false);
+
+  // タイトル画面で秘密のコマンドを打つとデバッグモードへ
+  useEffect(() => {
+    if (state.phase !== "title" || debug) return;
+    let buf = "";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.length !== 1) return;
+      buf = (buf + e.key.toLowerCase()).slice(-DEBUG_CODE.length);
+      if (buf === DEBUG_CODE) setDebug(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state.phase, debug]);
+
+  // デバッグモード：無敵・エンドレス・全属性でエフェクト確認
+  if (debug) {
+    return (
+      <main style={{ maxWidth: 560, margin: "0 auto", padding: 16, textAlign: "center" }}>
+        <h1 style={{ color: "var(--accent)", fontFamily: "var(--pixel-font)", fontSize: 20, margin: "4px 0 6px" }}>
+          🔧 DEBUG MODE
+        </h1>
+        <p style={{ fontSize: 12, opacity: 0.7 }}>無敵・エンドレス・全属性装備。エフェクト確認用。</p>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", margin: "8px 0" }}>
+          {DEBUG_WEAPONS.map((w) => (
+            <span
+              key={w.id}
+              style={{ fontSize: 11, padding: "2px 8px", border: `1.5px solid ${w.color}`, color: w.color, borderRadius: 6, fontFamily: "var(--pixel-font)" }}
+            >
+              {w.spell_type}
+            </span>
+          ))}
+        </div>
+        <SurvivalMode
+          weapons={DEBUG_WEAPONS}
+          durationSec={99999}
+          paused={false}
+          onLevelUp={() => {}}
+          onFinish={() => {}}
+          debug
+        />
+        <button style={btn} onClick={() => setDebug(false)}>← タイトルへ戻る</button>
+      </main>
+    );
+  }
 
   const isChant = CHANT_PHASES.has(state.phase);
   const showSurvival = state.survivalStarted && state.phase !== "gameResult";

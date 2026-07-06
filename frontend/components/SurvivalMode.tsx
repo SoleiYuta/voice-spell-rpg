@@ -17,6 +17,8 @@ export interface SurvivalModeProps {
   paused: boolean;
   onLevelUp: (nextLevel: number) => void;
   onFinish: (outcome: "victory" | "defeat") => void;
+  /** デバッグ：無敵・レベルUP/敗北なし（エフェクト観察用）。 */
+  debug?: boolean;
 }
 
 const W = 360;
@@ -47,7 +49,7 @@ const PALETTE: Record<Elem, string[]> = {
 };
 
 interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; }
-interface Shot { x: number; y: number; vx: number; vy: number; dmg: number; el: Elem; life: number; }
+interface Shot { x: number; y: number; vx: number; vy: number; dmg: number; el: Elem; life: number; hit: Set<Enemy>; }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number; }
 interface Bolt { pts: { x: number; y: number }[]; life: number; max: number; color: string; }
 
@@ -74,6 +76,7 @@ export default function SurvivalMode({
   paused,
   onLevelUp,
   onFinish,
+  debug = false,
 }: SurvivalModeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const worldRef = useRef<World | null>(null);
@@ -83,10 +86,12 @@ export default function SurvivalMode({
   const durRef = useRef(durationSec);
   const onLevelUpRef = useRef(onLevelUp);
   const onFinishRef = useRef(onFinish);
+  const debugRef = useRef(debug);
   const prevWeaponCount = useRef(weapons.length);
 
   useEffect(() => { weaponsRef.current = weapons; }, [weapons]);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => { debugRef.current = debug; }, [debug]);
   useEffect(() => { durRef.current = durationSec; }, [durationSec]);
   useEffect(() => { onLevelUpRef.current = onLevelUp; }, [onLevelUp]);
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
@@ -208,9 +213,9 @@ export default function SurvivalMode({
       w.elapsed += dt;
 
       // 敗北
-      if (!w.finished && w.player.hp <= 0) { w.finished = true; onFinishRef.current("defeat"); return; }
-      // ラウンドクリア（30秒生存）→ レベルUP or 制覇
-      if (!w.finished && w.elapsed >= durRef.current) {
+      if (!debugRef.current && !w.finished && w.player.hp <= 0) { w.finished = true; onFinishRef.current("defeat"); return; }
+      // ラウンドクリア（30秒生存）→ レベルUP or 制覇（デバッグ中はエンドレス）
+      if (!debugRef.current && !w.finished && w.elapsed >= durRef.current) {
         if (!w.awaitingLevel) {
           if (level < MAX_LEVEL) { w.awaitingLevel = true; onLevelUpRef.current(level + 1); }
           else { w.finished = true; onFinishRef.current("victory"); }
@@ -248,7 +253,7 @@ export default function SurvivalMode({
         const d = Math.hypot(ex, ey) || 1;
         e.x += (ex / d) * e.speed * dt;
         e.y += (ey / d) * e.speed * dt;
-        if (d < e.r + w.player.r) { w.player.hp -= 22 * dt; w.shake = Math.min(8, w.shake + 16 * dt); }
+        if (d < e.r + w.player.r) { if (!debugRef.current) w.player.hp -= 22 * dt; w.shake = Math.min(8, w.shake + 16 * dt); }
       }
 
       // 自動発射（各武器→最寄り敵）
@@ -265,18 +270,18 @@ export default function SurvivalMode({
         if (!best) continue;
         const el = toElem(weapon.spell_type);
         const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
-        w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED, dmg: weapon.damage, el, life: 2.2 });
+        w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED, dmg: weapon.damage, el, life: 2.2, hit: new Set<Enemy>() });
         burst(w, w.player.x, w.player.y, el, 4, 80); // マズル
         w.fireAt[weapon.id] = FIRE_INTERVAL;
       }
 
-      // 弾移動＆命中
+      // 弾移動＆命中（貫通：ヒットしても消えず、同じ敵には二度当たらない）
       for (const s of w.shots) {
         s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
         for (const e of w.enemies) {
-          if (e.hp <= 0) continue;
+          if (e.hp <= 0 || s.hit.has(e)) continue;
           if (Math.hypot(e.x - s.x, e.y - s.y) < e.r + 4) {
-            e.hp -= s.dmg; s.life = 0;
+            e.hp -= s.dmg; s.hit.add(e);
             const pal = PALETTE[s.el];
             burst(w, s.x, s.y, s.el, 7, 150); // 着弾
             if (s.el === "thunder") makeBolt(w, w.player.x, w.player.y, e.x, e.y, pal[0]);
@@ -286,7 +291,6 @@ export default function SurvivalMode({
               w.shake = Math.min(8, w.shake + 4);
               if (s.el === "ice") for (let k = 0; k < 6; k++) burst(w, e.x, e.y, "ice", 3, 90);
             }
-            break;
           }
         }
       }
@@ -399,6 +403,7 @@ export default function SurvivalMode({
       ctx.font = "12px monospace"; ctx.textAlign = "right";
       ctx.fillStyle = "#ffd54f"; ctx.fillText(`Lv ${weaponsRef.current.length}`, W - 10, 16);
       ctx.fillStyle = "#eee"; ctx.fillText(`${w.kills} kills`, W - 10, 30);
+      if (debugRef.current) { ctx.textAlign = "left"; ctx.fillStyle = "#5ce08a"; ctx.fillText("DEBUG (無敵)", 10, 44); }
 
       if (pausedRef.current) { ctx.fillStyle = "rgba(10,6,20,0.55)"; ctx.fillRect(0, 0, W, H); }
     };
