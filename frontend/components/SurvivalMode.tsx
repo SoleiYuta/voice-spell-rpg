@@ -26,6 +26,7 @@ const H = 520;
 
 interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; }
 interface Shot { x: number; y: number; vx: number; vy: number; dmg: number; color: string; life: number; }
+interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number; }
 
 interface World {
   player: { x: number; y: number; hp: number; maxHp: number; r: number };
@@ -37,6 +38,8 @@ interface World {
   fireAt: Record<string, number>; // 武器ごとの次発射までの残り時間
   nextLevelKills: number;         // 次のレベルUPに必要な累計kill
   awaitingLevel: boolean;         // レベルUP要求中（詠唱待ち）
+  particles: Particle[];          // 着弾・撃破の火花
+  shake: number;                  // 画面シェイク量
   finished: boolean;
 }
 
@@ -92,6 +95,8 @@ export default function SurvivalMode({
       fireAt: {},
       nextLevelKills: 6,
       awaitingLevel: false,
+      particles: [],
+      shake: 0,
       finished: false,
     };
 
@@ -147,6 +152,19 @@ export default function SurvivalMode({
       w.enemies.push({ x, y, hp, maxHp: hp, r: 11, speed: 42 + Math.random() * 22 });
     };
 
+    // 火花を n 個ばらまく（着弾・撃破・詠唱の演出）
+    const burst = (w: World, x: number, y: number, color: string, n: number, speed: number) => {
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = speed * (0.4 + Math.random() * 0.6);
+        w.particles.push({
+          x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 0.35 + Math.random() * 0.35, max: 0.7, color, size: 1.5 + Math.random() * 2.2,
+        });
+      }
+      if (w.particles.length > 260) w.particles.splice(0, w.particles.length - 260);
+    };
+
     const step = (dt: number, w: World) => {
       w.elapsed += dt;
 
@@ -188,7 +206,7 @@ export default function SurvivalMode({
         const d = Math.hypot(ex, ey) || 1;
         e.x += (ex / d) * e.speed * dt;
         e.y += (ey / d) * e.speed * dt;
-        if (d < e.r + w.player.r) w.player.hp -= 22 * dt; // 接触中はHP減少
+        if (d < e.r + w.player.r) { w.player.hp -= 22 * dt; w.shake = Math.min(7, w.shake + 14 * dt); } // 接触中はHP減少
       }
 
       // --- 武器の自動発射（最寄りの敵へ） ---
@@ -210,6 +228,7 @@ export default function SurvivalMode({
           vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED,
           dmg: weapon.damage, color: weapon.color, life: 2.2,
         });
+        burst(w, w.player.x, w.player.y, weapon.color, 3, 70); // マズルフラッシュ
         w.fireAt[weapon.id] = FIRE_INTERVAL;
       }
 
@@ -220,13 +239,26 @@ export default function SurvivalMode({
           if (e.hp <= 0) continue;
           if (Math.hypot(e.x - s.x, e.y - s.y) < e.r + 4) {
             e.hp -= s.dmg; s.life = 0;
-            if (e.hp <= 0) w.kills += 1;
+            burst(w, s.x, s.y, s.color, 5, 130); // 着弾スパーク
+            if (e.hp <= 0) {
+              w.kills += 1;
+              burst(w, e.x, e.y, s.color, 14, 200); // 撃破バースト
+              w.shake = Math.min(6, w.shake + 3);
+            }
             break;
           }
         }
       }
       w.shots = w.shots.filter((s) => s.life > 0 && s.x > -20 && s.x < W + 20 && s.y > -20 && s.y < H + 20);
       w.enemies = w.enemies.filter((e) => e.hp > 0);
+
+      // パーティクル更新＆シェイク減衰
+      for (const pt of w.particles) {
+        pt.x += pt.vx * dt; pt.y += pt.vy * dt;
+        pt.vx *= 0.9; pt.vy *= 0.9; pt.life -= dt;
+      }
+      w.particles = w.particles.filter((p) => p.life > 0);
+      w.shake = Math.max(0, w.shake - 24 * dt);
 
       // --- レベルUP判定 ---
       const MAX_WEAPONS = 5;
@@ -237,22 +269,37 @@ export default function SurvivalMode({
     };
 
     const draw = (ctx: CanvasRenderingContext2D, w: World) => {
-      // 背景
+      // 背景（シェイクの影響を受けない土台）
       ctx.fillStyle = "#140f1f";
       ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      if (w.shake > 0.1) ctx.translate((Math.random() - 0.5) * w.shake, (Math.random() - 0.5) * w.shake);
+
       // グリッド
       ctx.strokeStyle = "rgba(160,107,255,0.08)";
       ctx.lineWidth = 1;
       for (let gx = 0; gx <= W; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
       for (let gy = 0; gy <= H; gy += 40) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
 
-      // 弾
+      // 弾（尾を引く光弾）
       for (const s of w.shots) {
-        ctx.fillStyle = s.color;
-        ctx.shadowColor = s.color; ctx.shadowBlur = 8;
+        const tx = s.x - s.vx * 0.03, ty = s.y - s.vy * 0.03;
+        ctx.strokeStyle = s.color; ctx.globalAlpha = 0.35; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(s.x, s.y); ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = s.color; ctx.shadowColor = s.color; ctx.shadowBlur = 10;
         ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, Math.PI * 2); ctx.fill();
       }
       ctx.shadowBlur = 0;
+
+      // パーティクル（着弾・撃破・詠唱の火花）
+      for (const pt of w.particles) {
+        ctx.globalAlpha = Math.max(0, pt.life / pt.max);
+        ctx.fillStyle = pt.color;
+        ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
 
       // 敵
       for (const e of w.enemies) {
@@ -277,6 +324,8 @@ export default function SurvivalMode({
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.arc(p.x - 4, p.y - 2, 2, 0, Math.PI * 2);
       ctx.arc(p.x + 4, p.y - 2, 2, 0, Math.PI * 2); ctx.fill();
+
+      ctx.restore(); // ここまでシェイク適用（HUDは揺らさない）
 
       // HUD: HPバー
       ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(10, 10, 150, 12);
