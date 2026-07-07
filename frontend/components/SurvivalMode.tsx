@@ -47,7 +47,7 @@ const PALETTE: Record<Elem, string[]> = {
   wind: ["#eafff0", "#a6f0c0", "#5ad98a", "#2fa866"],
 };
 const FIRE_INTERVAL: Record<Elem, number> = {
-  fire: 1.0, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
+  fire: 0.9, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
 };
 
 // 敵タイプ別の色 [濃い縁, 本体]。0=雑魚(赤) / 1=速い小型(橙) / 2=硬い大型(紫)
@@ -381,7 +381,7 @@ export default function SurvivalMode({
         if (el === "fire") {
           // 火を敵へゆっくり撃つ → 途中で止まり、止まったら2秒その場で燃え続ける（範囲持続ダメージ）
           const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
-          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130, moveTime: 0.9, stopLife: 2.0, dmg: dmg, r: 22 });
+          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130, moveTime: 0.9, stopLife: 2.0, dmg: dmg, r: 32 });
         } else if (el === "ice") {
           // 高速落下する氷塊：最寄り最大2体の頭上から
           const targets = [...w.enemies]
@@ -409,7 +409,7 @@ export default function SurvivalMode({
           w.holes.push({ x: best.x, y: best.y, life: 1.4, max: 1.4, dmg: dmg, r: 74 });
         } else if (el === "light") {
           const base = Math.random() * Math.PI;
-          const N = 10;
+          const N = 8;
           for (let i = 0; i < N; i++) w.beams.push({ x: w.player.x, y: w.player.y, angle: base + (i / N) * Math.PI * 2, life: 0.18, max: 0.18, dmg: dmg, hit: new Set<Enemy>() });
         } else if (el === "wind") {
           // 竜巻：発生してランダムに移動（場外に出たら消滅）。触れた敵をノックバック
@@ -440,7 +440,7 @@ export default function SurvivalMode({
         for (const e of w.enemies) {
           if (e.hp <= 0) continue;
           if (Math.hypot(e.x - fl.x, e.y - fl.y) < fl.r + e.r) {
-            e.hp -= fl.dmg * dt * 3;
+            e.hp -= fl.dmg * dt * 3.5;
             if (e.hp <= 0) { w.kills += 1; dropGem(w, e.x, e.y); burst(w, e.x, e.y, "fire", 18, 200); w.shake = Math.min(8, w.shake + 3); }
           }
         }
@@ -506,7 +506,7 @@ export default function SurvivalMode({
           const d = Math.hypot(tx, ty) || 1;
           if (d < to.r) {
             e.x += (tx / d) * 220 * dt; e.y += (ty / d) * 220 * dt; // 外向きノックバック
-            e.hp -= to.dmg * dt * 3.6; // 火力を約3倍に
+            e.hp -= to.dmg * dt * 2.6; // バランス調整（他属性と揃える）
             if (e.hp <= 0) { w.kills += 1; dropGem(w, e.x, e.y); burst(w, e.x, e.y, "wind", 16, 190); w.shake = Math.min(8, w.shake + 2); }
           }
         }
