@@ -45,7 +45,7 @@ const PALETTE: Record<Elem, string[]> = {
   wind: ["#eafff0", "#a6f0c0", "#5ad98a", "#2fa866"],
 };
 const FIRE_INTERVAL: Record<Elem, number> = {
-  fire: 0.25, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
+  fire: 1.0, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
 };
 
 // 炎ドット絵（プレイヤーから立ち昇る）。R=赤 O=橙 Y=黄 W=芯
@@ -301,7 +301,7 @@ export default function SurvivalMode({
         if (el === "fire") {
           // 火を敵へゆっくり撃つ → 途中で止まり、止まったら2秒その場で燃え続ける（範囲持続ダメージ）
           const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
-          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 65, vy: Math.sin(a) * 65, moveTime: 0.6, stopLife: 2.0, dmg: weapon.damage, r: 22 });
+          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 65, vy: Math.sin(a) * 65, moveTime: 2.4, stopLife: 2.0, dmg: weapon.damage, r: 22 });
         } else if (el === "ice") {
           // 高速落下する氷塊：最寄り最大2体の頭上から
           const targets = [...w.enemies]
