@@ -109,19 +109,19 @@ export const sfx = {
   playChantStart() {
     tone({ freq: 180, freqTo: 360, dur: 0.22, type: "sine", gain: 0.22 });
   },
-  // 詠唱：送信（呪文発射）。「ファぁーん」＝低めで幻想的に膨らむ魔法の解放感。
-  // 1オクターブ下げた C4-E4-G4 をサイン波で緩やかに膨らませ、微デチューンでシマー。
+  // 詠唱：送信（呪文発射）。押した瞬間「魔法が組み上がっていく／できそう」な充填感。
+  // 低い和音がゆっくり膨らみながら上へ滑り（エネルギーの収束・上昇）、最後に高音が開いて予感を残す。
   playCast() {
-    // ベース：C4-E4-G4（低め・サインでやわらかく）。長い attack で後半に山（幻想的な膨らみ）
-    const chord = [262, 330, 392];
-    chord.forEach((f) => {
-      tone({ freq: f, dur: 0.95, type: "sine", gain: 0.24, attack: 0.55 });
-      tone({ freq: f * 1.007, dur: 0.95, type: "sine", gain: 0.15, attack: 0.55 }); // 微デチューン＝ゆらぎ
+    // 上昇する和音：C4→G4, E4→B4, G4→D5 とグリッサンドで登る＝力が集まって上がっていく感覚
+    const rise: [number, number][] = [
+      [262, 392], [330, 494], [392, 587],
+    ];
+    rise.forEach(([f0, f1]) => {
+      tone({ freq: f0, freqTo: f1, dur: 0.85, type: "sine", gain: 0.2, attack: 0.5 });
+      tone({ freq: f0 * 1.007, freqTo: f1 * 1.007, dur: 0.85, type: "sine", gain: 0.12, attack: 0.5 }); // シマー
     });
-    // 上に C5 を薄く重ねて空気感（きらめきではなく持続する倍音）
-    tone({ freq: 523, dur: 0.9, type: "sine", gain: 0.08, attack: 0.6 });
-    // ゆるやかに開く上昇の一筆（こちらも低めに）
-    tone({ freq: 330, freqTo: 660, dur: 0.7, type: "sine", gain: 0.16, attack: 0.45 });
+    // 終盤に開く高音（充填完了の予感＝「できそう」）
+    tone({ freq: 784, freqTo: 1046, dur: 0.5, type: "sine", gain: 0.14, attack: 0.3, delay: 0.38 });
   },
   // 命中（軽い高音チック・throttleで鳴りすぎ防止）
   playHit() {
