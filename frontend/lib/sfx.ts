@@ -60,6 +60,7 @@ interface Tone {
   gain?: number;
   freqTo?: number; // 指定するとその周波数へスイープ
   delay?: number;
+  attack?: number; // 立ち上がり秒（大きいほど「ふわっ」と膨らむ）
 }
 
 function tone(o: Tone) {
@@ -72,8 +73,9 @@ function tone(o: Tone) {
   osc.frequency.setValueAtTime(o.freq, t0);
   if (o.freqTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.freqTo), t0 + o.dur);
   const peak = o.gain ?? 0.4;
+  const atk = Math.min(o.attack ?? 0.008, o.dur * 0.9);
   g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(peak, t0 + 0.008);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + atk);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
   osc.connect(g);
   g.connect(master);
@@ -107,16 +109,19 @@ export const sfx = {
   playChantStart() {
     tone({ freq: 180, freqTo: 360, dur: 0.22, type: "sine", gain: 0.22 });
   },
-  // 詠唱：送信（呪文発射）。高音のキラキラ（りりん）主体。頭の「ぽ」は無くし、
-  // 短く高めのサイン波でスッと立ち上げてからトリルへ。
+  // 詠唱：送信（呪文発射）。「ファぁーん」＝ふわっと膨らむ魔法の解放感。
+  // メジャーコードを緩やかに膨らませて伸ばし（微デチューンでシマー）＋上昇＋後半にきらめき。
   playCast() {
-    // 立ち上がり（高め・サイン・短くして「ぽ」感を消す）
-    tone({ freq: 1046, freqTo: 1500, dur: 0.07, type: "sine", gain: 0.18 });
-    // りりん：高音の粒を散らしてキラキラ感
-    const twinkle: [number, number][] = [
-      [1568, 0.07], [1319, 0.14], [1760, 0.21],
-    ];
-    twinkle.forEach(([f, d]) => tone({ freq: f, dur: 0.1, type: "sine", gain: 0.22, delay: d }));
+    // ベース：C5-E5-G5 を slow attack で膨らませて伸ばす。1.006倍を重ねてシマー（きらめく揺らぎ）
+    const chord = [523, 659, 784];
+    chord.forEach((f) => {
+      tone({ freq: f, dur: 0.6, type: "triangle", gain: 0.15, attack: 0.13 });
+      tone({ freq: f * 1.006, dur: 0.6, type: "triangle", gain: 0.09, attack: 0.13 });
+    });
+    // ファ→ァと開く上昇の一筆
+    tone({ freq: 660, freqTo: 1320, dur: 0.42, type: "sine", gain: 0.16, attack: 0.05 });
+    // 後半にきらめき（高音の粒）
+    [1568, 2093].forEach((f, i) => tone({ freq: f, dur: 0.16, type: "sine", gain: 0.13, delay: 0.24 + i * 0.1 }));
   },
   // 命中（軽い高音チック・throttleで鳴りすぎ防止）
   playHit() {
