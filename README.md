@@ -67,7 +67,7 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 | W4: リハ完了・提出 (〜7/12) | 3/3 | ✅ 完了 |
 
 ### 今やること（現フェーズのオープンissue）
-- #23 [PM] テキスト入力backup（マイク不可の審査員向け保険・任意） — @satoryudev
+- #23 [PM] テキスト入力backup（マイク不可の審査員向け保険・任意） — @kazuma660
 
-_最終更新: 2026-07-07 02:27 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
+_最終更新: 2026-07-07 03:14 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
