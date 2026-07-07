@@ -68,8 +68,10 @@ const FLAME = [
   "..RRRRR..",
 ];
 
-interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; }
+interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; flash: number; }
 interface Shot { x: number; y: number; vx: number; vy: number; dmg: number; el: Elem; life: number; hit: Set<Enemy>; }
+interface DamageText { x: number; y: number; vy: number; life: number; max: number; text: string; color: string; } // 命中ダメージ数字
+interface Ring { x: number; y: number; r: number; life: number; max: number; color: string; } // 撃破の弾けリング
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number; }
 interface Bolt { pts: { x: number; y: number }[]; life: number; max: number; color: string; }
 interface IceFall { x: number; y: number; vy: number; targetY: number; dmg: number; done: boolean; }
@@ -89,6 +91,8 @@ interface World {
   beams: Beam[];
   tornados: Tornado[];
   flames: Flame[];
+  damageTexts: DamageText[];
+  rings: Ring[];
   kills: number;
   elapsed: number;
   spawnTimer: number;
@@ -132,6 +136,7 @@ export default function SurvivalMode({
       if (w) {
         w.elapsed = 0;
         w.enemies = []; w.shots = []; w.iceFalls = []; w.holes = []; w.beams = []; w.tornados = []; w.flames = [];
+        w.damageTexts = []; w.rings = [];
         w.spawnTimer = 0;
         w.awaitingLevel = false;
         w.player.hp = w.player.maxHp;
@@ -150,6 +155,7 @@ export default function SurvivalMode({
     worldRef.current = {
       player: { x: W / 2, y: H / 2, hp: 100, maxHp: 100, r: 12 },
       enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [], flames: [],
+      damageTexts: [], rings: [],
       kills: 0, elapsed: 0, spawnTimer: 0, fireAt: {},
       awaitingLevel: false, shake: 0, flash: 1, flashEl: toElem(weapons[0]?.spell_type),
       finished: false,
@@ -200,7 +206,7 @@ export default function SurvivalMode({
       else if (edge === 2) { x = Math.random() * W; y = H + 14; }
       else { x = -14; y = Math.random() * H; }
       const hp = 16 + level * 8 + w.elapsed * 0.5;
-      w.enemies.push({ x, y, hp, maxHp: hp, r: 11, speed: 40 + level * 4 + Math.random() * 24 });
+      w.enemies.push({ x, y, hp, maxHp: hp, r: 11, speed: 40 + level * 4 + Math.random() * 24, flash: 0 });
     };
 
     const burst = (w: World, x: number, y: number, el: Elem, n: number, speed: number) => {
@@ -232,13 +238,21 @@ export default function SurvivalMode({
       w.bolts.push({ pts, life: 0.14, max: 0.14, color });
     };
 
-    const hitEnemy = (w: World, e: Enemy, dmg: number, el: Elem) => {
+    const hitEnemy = (w: World, e: Enemy, dmg: number, el: Elem, fromX?: number, fromY?: number) => {
       if (e.hp <= 0) return;
       e.hp -= dmg;
+      e.flash = 0.1; // 被弾で白フラッシュ
+      // ダメージ数字（敵の上に浮いて消える）
+      w.damageTexts.push({ x: e.x, y: e.y - e.r - 2, vy: -34, life: 0.6, max: 0.6, text: String(Math.round(dmg)), color: PALETTE[el][0] });
+      // ノックバック（発生源から外向き。既定はプレイヤー方向）
+      const sx = fromX ?? w.player.x, sy = fromY ?? w.player.y;
+      const kx = e.x - sx, ky = e.y - sy, kd = Math.hypot(kx, ky) || 1;
+      e.x += (kx / kd) * 6; e.y += (ky / kd) * 6;
       burst(w, e.x, e.y, el, 6, 130);
       if (e.hp <= 0) {
         w.kills += 1;
         burst(w, e.x, e.y, el, 20, 210);
+        w.rings.push({ x: e.x, y: e.y, r: e.r, life: 0.2, max: 0.2, color: "#ffffff" }); // 撃破の白リング
         w.shake = Math.min(8, w.shake + 3);
         if (el === "ice") for (let k = 0; k < 5; k++) burst(w, e.x, e.y, "ice", 3, 90);
       } else {
@@ -286,6 +300,7 @@ export default function SurvivalMode({
         const ex = w.player.x - e.x, ey = w.player.y - e.y;
         const d = Math.hypot(ex, ey) || 1;
         e.x += (ex / d) * e.speed * dt; e.y += (ey / d) * e.speed * dt;
+        if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
         if (d < e.r + w.player.r) { if (!debugRef.current) w.player.hp -= 22 * dt; w.shake = Math.min(8, w.shake + 16 * dt); }
       }
 
@@ -447,6 +462,11 @@ export default function SurvivalMode({
       w.particles = w.particles.filter((p) => p.life > 0);
       for (const b of w.bolts) b.life -= dt;
       w.bolts = w.bolts.filter((b) => b.life > 0);
+      // ダメージ数字（浮上＆減速）と撃破リング（拡大）
+      for (const d of w.damageTexts) { d.y += d.vy * dt; d.vy *= 0.9; d.life -= dt; }
+      w.damageTexts = w.damageTexts.filter((d) => d.life > 0);
+      for (const rg of w.rings) { rg.r += 130 * dt; rg.life -= dt; }
+      w.rings = w.rings.filter((rg) => rg.life > 0);
       w.shake = Math.max(0, w.shake - 26 * dt);
       w.flash = Math.max(0, w.flash - 2 * dt);
     };
@@ -490,10 +510,14 @@ export default function SurvivalMode({
 
       // 敵
       for (const e of w.enemies) {
-        px(e.x, e.y, e.r * 2, "#8a1810");
-        px(e.x, e.y, e.r * 1.5, "#c8341a");
-        px(e.x - 3.5, e.y - 2, 2.5, "#1a0605");
-        px(e.x + 3.5, e.y - 2, 2.5, "#1a0605");
+        if (e.flash > 0) {
+          px(e.x, e.y, e.r * 2, "#ffffff"); // 被弾フラッシュ（真っ白）
+        } else {
+          px(e.x, e.y, e.r * 2, "#8a1810");
+          px(e.x, e.y, e.r * 1.5, "#c8341a");
+          px(e.x - 3.5, e.y - 2, 2.5, "#1a0605");
+          px(e.x + 3.5, e.y - 2, 2.5, "#1a0605");
+        }
         if (e.hp < e.maxHp) {
           ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(e.x - e.r, e.y - e.r - 6, e.r * 2, 3);
           ctx.fillStyle = "#ff8a5c"; ctx.fillRect(e.x - e.r, e.y - e.r - 6, e.r * 2 * (e.hp / e.maxHp), 3);
@@ -552,8 +576,24 @@ export default function SurvivalMode({
       }
 
       for (const pt of w.particles) { ctx.globalAlpha = Math.max(0, pt.life / pt.max); px(pt.x, pt.y, pt.size, pt.color); }
+
+      // 撃破の白リング（拡大しながらフェード）
+      for (const rg of w.rings) {
+        ctx.globalAlpha = Math.max(0, rg.life / rg.max);
+        ctx.strokeStyle = rg.color; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(rg.x, rg.y, rg.r, 0, Math.PI * 2); ctx.stroke();
+      }
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
+
+      // ダメージ数字（世界座標・シェイク内）
+      ctx.font = "bold 13px monospace"; ctx.textAlign = "center";
+      for (const d of w.damageTexts) {
+        ctx.globalAlpha = Math.max(0, d.life / d.max);
+        ctx.fillStyle = "#000"; ctx.fillText(d.text, d.x + 1, d.y + 1); // 縁取り
+        ctx.fillStyle = d.color; ctx.fillText(d.text, d.x, d.y);
+      }
+      ctx.globalAlpha = 1;
 
       ctx.restore();
 
