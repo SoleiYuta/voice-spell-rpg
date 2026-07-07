@@ -9,7 +9,8 @@
 //   風=竜巻(敵をノックバック+軽ダメージ)
 // 操作: ドラッグ/タッチで移動（PCは矢印/WASDも可）。攻撃は自動。
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { Weapon } from "@/lib/useGame";
 import { sfx } from "@/lib/sfx";
 import styles from "./SurvivalMode.module.css";
@@ -86,6 +87,7 @@ interface Hole { x: number; y: number; life: number; max: number; dmg: number; r
 interface Beam { x: number; y: number; angle: number; life: number; max: number; dmg: number; hit: Set<Enemy>; }
 interface Tornado { x: number; y: number; angle: number; speed: number; age: number; dmg: number; r: number; }
 interface Flame { x: number; y: number; vx: number; vy: number; moveTime: number; stopLife: number; dmg: number; r: number; } // 炎弾（途中で止まって燃え続ける）
+interface Gem { x: number; y: number; collected?: boolean; } // XPジェム（撃破ドロップ）
 
 interface World {
   player: { x: number; y: number; hp: number; maxHp: number; r: number; face: number };
@@ -100,6 +102,13 @@ interface World {
   flames: Flame[];
   damageTexts: DamageText[];
   rings: Ring[];
+  gems: Gem[];
+  xp: number;
+  xpNext: number;
+  plevel: number;   // カード強化レベル
+  dmgMul: number;   // 威力倍率
+  fireMul: number;  // 発射間隔倍率(小さいほど速い)
+  spdMul: number;   // 移動速度倍率
   kills: number;
   elapsed: number;
   spawnTimer: number;
@@ -112,6 +121,21 @@ interface World {
   finished: boolean;
 }
 
+// レベルUPで選べる強化カード
+interface CardOpt { key: string; label: string; desc: string; color: string; apply: (w: World) => void; }
+const CARD_POOL: CardOpt[] = [
+  { key: "dmg", label: "威力 +25%", desc: "全魔法のダメージ", color: "#ff5a3c", apply: (w) => { w.dmgMul *= 1.25; } },
+  { key: "rate", label: "連射 +18%", desc: "発射が速くなる", color: "#ffd54f", apply: (w) => { w.fireMul *= 0.85; } },
+  { key: "spd", label: "移動 +15%", desc: "逃げやすくなる", color: "#5ad98a", apply: (w) => { w.spdMul *= 1.15; } },
+  { key: "hp", label: "最大HP +25", desc: "打たれ強く＋回復", color: "#ff6b8a", apply: (w) => { w.player.maxHp += 25; w.player.hp += 25; } },
+  { key: "heal", label: "HP回復 +40", desc: "その場で回復", color: "#7be495", apply: (w) => { w.player.hp = Math.min(w.player.maxHp, w.player.hp + 40); } },
+];
+function rollCards(): CardOpt[] {
+  const pool = [...CARD_POOL];
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool.slice(0, 3);
+}
+
 export default function SurvivalMode({
   weapons,
   durationSec,
@@ -122,6 +146,21 @@ export default function SurvivalMode({
 }: SurvivalModeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const worldRef = useRef<World | null>(null);
+  const internalPaused = useRef(false); // カード選択中はワールドを凍結
+  const [cards, setCards] = useState<CardOpt[] | null>(null);
+
+  // カードを選ぶ → 効果適用 → 再開
+  const pickCard = (c: CardOpt) => {
+    const w = worldRef.current;
+    if (w) {
+      c.apply(w);
+      w.xp = Math.max(0, w.xp - w.xpNext);
+      w.xpNext += 4;
+      w.plevel += 1;
+    }
+    setCards(null);
+    internalPaused.current = false;
+  };
 
   const weaponsRef = useRef(weapons);
   const pausedRef = useRef(paused);
@@ -144,7 +183,7 @@ export default function SurvivalMode({
       if (w) {
         w.elapsed = 0;
         w.enemies = []; w.shots = []; w.iceFalls = []; w.holes = []; w.beams = []; w.tornados = []; w.flames = [];
-        w.damageTexts = []; w.rings = [];
+        w.damageTexts = []; w.rings = []; w.gems = []; // 強化(xp/倍率)はラウンド跨ぎで保持、ジェムだけ掃除
         w.spawnTimer = 0;
         w.awaitingLevel = false;
         w.player.hp = w.player.maxHp;
@@ -164,7 +203,8 @@ export default function SurvivalMode({
     worldRef.current = {
       player: { x: W / 2, y: H / 2, hp: 100, maxHp: 100, r: 12, face: 1 },
       enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [], flames: [],
-      damageTexts: [], rings: [],
+      damageTexts: [], rings: [], gems: [],
+      xp: 0, xpNext: 5, plevel: 0, dmgMul: 1, fireMul: 1, spdMul: 1,
       kills: 0, elapsed: 0, spawnTimer: 0, fireAt: {},
       awaitingLevel: false, shake: 0, hurt: 0, flash: 1, flashEl: toElem(weapons[0]?.spell_type),
       finished: false,
@@ -252,6 +292,8 @@ export default function SurvivalMode({
       w.bolts.push({ pts, life: 0.14, max: 0.14, color });
     };
 
+    const dropGem = (w: World, x: number, y: number) => { w.gems.push({ x, y }); };
+
     const hitEnemy = (w: World, e: Enemy, dmg: number, el: Elem, fromX?: number, fromY?: number) => {
       if (e.hp <= 0) return;
       e.hp -= dmg;
@@ -265,6 +307,7 @@ export default function SurvivalMode({
       burst(w, e.x, e.y, el, 6, 130);
       if (e.hp <= 0) {
         w.kills += 1;
+        dropGem(w, e.x, e.y);
         burst(w, e.x, e.y, el, 20, 210);
         w.rings.push({ x: e.x, y: e.y, r: e.r, life: 0.2, max: 0.2, color: "#ffffff" }); // 撃破の白リング
         w.shake = Math.min(8, w.shake + 3);
@@ -301,7 +344,7 @@ export default function SurvivalMode({
       }
       const len = Math.hypot(dx, dy);
       if (Math.abs(dx) > 0.01) w.player.face = dx > 0 ? 1 : -1; // 向き更新
-      if (len > 0) { w.player.x += (dx / len) * PLAYER_SPEED * dt; w.player.y += (dy / len) * PLAYER_SPEED * dt; }
+      if (len > 0) { const sp = PLAYER_SPEED * w.spdMul; w.player.x += (dx / len) * sp * dt; w.player.y += (dy / len) * sp * dt; }
       w.player.x = Math.max(w.player.r, Math.min(W - w.player.r, w.player.x));
       w.player.y = Math.max(w.player.r, Math.min(H - w.player.r, w.player.y));
 
@@ -323,6 +366,7 @@ export default function SurvivalMode({
       const SHOT_SPEED = 330;
       for (const weapon of weaponsRef.current) {
         const el = toElem(weapon.spell_type);
+        const dmg = weapon.damage * w.dmgMul; // カード強化を反映
         w.fireAt[weapon.id] = (w.fireAt[weapon.id] ?? 0) - dt;
         if (w.fireAt[weapon.id] > 0) continue;
         let best: Enemy | null = null, bestD = Infinity;
@@ -335,13 +379,13 @@ export default function SurvivalMode({
         if (el === "fire") {
           // 火を敵へゆっくり撃つ → 途中で止まり、止まったら2秒その場で燃え続ける（範囲持続ダメージ）
           const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
-          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130, moveTime: 0.9, stopLife: 2.0, dmg: weapon.damage, r: 22 });
+          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130, moveTime: 0.9, stopLife: 2.0, dmg: dmg, r: 22 });
         } else if (el === "ice") {
           // 高速落下する氷塊：最寄り最大2体の頭上から
           const targets = [...w.enemies]
             .sort((p, q) => Math.hypot(p.x - w.player.x, p.y - w.player.y) - Math.hypot(q.x - w.player.x, q.y - w.player.y))
             .slice(0, 2);
-          for (const t of targets) w.iceFalls.push({ x: t.x, y: -20, vy: 1150, targetY: t.y, dmg: weapon.damage, done: false });
+          for (const t of targets) w.iceFalls.push({ x: t.x, y: -20, vy: 1150, targetY: t.y, dmg: dmg, done: false });
         } else if (el === "thunder") {
           // 弾なしの即着弾・連鎖電撃（最寄りから最大3体）
           let cur = { x: w.player.x, y: w.player.y };
@@ -355,26 +399,26 @@ export default function SurvivalMode({
             }
             if (!n) break;
             makeBolt(w, cur.x, cur.y, n.x, n.y, PALETTE.thunder[0]);
-            hitEnemy(w, n, weapon.damage, "thunder");
+            hitEnemy(w, n, dmg, "thunder");
             used.add(n); cur = n;
           }
           w.shake = Math.min(8, w.shake + 2);
         } else if (el === "dark") {
-          w.holes.push({ x: best.x, y: best.y, life: 1.4, max: 1.4, dmg: weapon.damage, r: 74 });
+          w.holes.push({ x: best.x, y: best.y, life: 1.4, max: 1.4, dmg: dmg, r: 74 });
         } else if (el === "light") {
           const base = Math.random() * Math.PI;
           const N = 10;
-          for (let i = 0; i < N; i++) w.beams.push({ x: w.player.x, y: w.player.y, angle: base + (i / N) * Math.PI * 2, life: 0.18, max: 0.18, dmg: weapon.damage, hit: new Set<Enemy>() });
+          for (let i = 0; i < N; i++) w.beams.push({ x: w.player.x, y: w.player.y, angle: base + (i / N) * Math.PI * 2, life: 0.18, max: 0.18, dmg: dmg, hit: new Set<Enemy>() });
         } else if (el === "wind") {
           // 竜巻：発生してランダムに移動（場外に出たら消滅）。触れた敵をノックバック
-          w.tornados.push({ x: best.x, y: best.y, angle: Math.random() * Math.PI * 2, speed: 80, age: 0, dmg: weapon.damage, r: 62 });
+          w.tornados.push({ x: best.x, y: best.y, angle: Math.random() * Math.PI * 2, speed: 80, age: 0, dmg: dmg, r: 62 });
         } else {
           const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
-          w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED, dmg: weapon.damage, el, life: 2.2, hit: new Set<Enemy>() });
+          w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED, dmg: dmg, el, life: 2.2, hit: new Set<Enemy>() });
         }
         burst(w, w.player.x, w.player.y, el, 4, 80);
         sfx.playAttack(el); // 属性ごとの発射音
-        w.fireAt[weapon.id] = FIRE_INTERVAL[el] ?? 0.7;
+        w.fireAt[weapon.id] = (FIRE_INTERVAL[el] ?? 0.7) * w.fireMul;
       }
 
       // 貫通弾（フォールバック用）
@@ -395,7 +439,7 @@ export default function SurvivalMode({
           if (e.hp <= 0) continue;
           if (Math.hypot(e.x - fl.x, e.y - fl.y) < fl.r + e.r) {
             e.hp -= fl.dmg * dt * 3;
-            if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "fire", 18, 200); w.shake = Math.min(8, w.shake + 3); }
+            if (e.hp <= 0) { w.kills += 1; dropGem(w, e.x, e.y); burst(w, e.x, e.y, "fire", 18, 200); w.shake = Math.min(8, w.shake + 3); }
           }
         }
         if (Math.random() < 0.5) burst(w, fl.x + (Math.random() - 0.5) * fl.r, fl.y + (Math.random() - 0.5) * fl.r, "fire", 1, 25);
@@ -425,7 +469,7 @@ export default function SurvivalMode({
             e.x += (hx / d) * 150 * dt; e.y += (hy / d) * 150 * dt;
             if (d < ho.r * 0.6) {
               e.hp -= ho.dmg * dt * 2.5;
-              if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "dark", 18, 200); w.shake = Math.min(8, w.shake + 3); }
+              if (e.hp <= 0) { w.kills += 1; dropGem(w, e.x, e.y); burst(w, e.x, e.y, "dark", 18, 200); w.shake = Math.min(8, w.shake + 3); }
             }
           }
         }
@@ -461,7 +505,7 @@ export default function SurvivalMode({
           if (d < to.r) {
             e.x += (tx / d) * 220 * dt; e.y += (ty / d) * 220 * dt; // 外向きノックバック
             e.hp -= to.dmg * dt * 3.6; // 火力を約3倍に
-            if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "wind", 16, 190); w.shake = Math.min(8, w.shake + 2); }
+            if (e.hp <= 0) { w.kills += 1; dropGem(w, e.x, e.y); burst(w, e.x, e.y, "wind", 16, 190); w.shake = Math.min(8, w.shake + 2); }
           }
         }
       }
@@ -472,6 +516,15 @@ export default function SurvivalMode({
 
       // 死亡敵の一括除去
       w.enemies = w.enemies.filter((e) => e.hp > 0);
+
+      // XPジェム：近づくと吸引→回収でXP。しきい値でカード選択へ
+      for (const g of w.gems) {
+        const gx = w.player.x - g.x, gy = w.player.y - g.y, gd = Math.hypot(gx, gy) || 1;
+        if (gd < 66) { g.x += (gx / gd) * 260 * dt; g.y += (gy / gd) * 260 * dt; }
+        if (gd < w.player.r + 5) { g.collected = true; w.xp += 1; }
+      }
+      w.gems = w.gems.filter((g) => !g.collected);
+      if (!debugRef.current && w.xp >= w.xpNext) { internalPaused.current = true; setCards(rollCards()); }
 
       // 更新
       for (const pt of w.particles) { pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vx *= 0.9; pt.vy *= 0.9; pt.life -= dt; }
@@ -611,6 +664,13 @@ export default function SurvivalMode({
 
       for (const pt of w.particles) { ctx.globalAlpha = Math.max(0, pt.life / pt.max); px(pt.x, pt.y, pt.size, pt.color); }
 
+      // XPジェム（光る水色）
+      for (const g of w.gems) {
+        ctx.shadowColor = "#4fc3f7"; ctx.shadowBlur = 6;
+        px(g.x, g.y, 5, "#8fe3ff"); px(g.x, g.y, 2.5, "#ffffff");
+        ctx.shadowBlur = 0;
+      }
+
       // 撃破の白リング（拡大しながらフェード）
       for (const rg of w.rings) {
         ctx.globalAlpha = Math.max(0, rg.life / rg.max);
@@ -652,6 +712,10 @@ export default function SurvivalMode({
       // ===== HUD =====
       // 上部パネル
       ctx.fillStyle = "rgba(10,6,20,0.45)"; ctx.fillRect(0, 0, W, 40);
+
+      // XPバー（最上部・全幅）
+      ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, 4);
+      ctx.fillStyle = "#4fc3f7"; ctx.fillRect(0, 0, W * Math.min(1, w.xp / w.xpNext), 4);
 
       // HPバー（❤＋数値・低HPで点滅）
       const hpPct = Math.max(0, p.hp / p.maxHp);
@@ -708,7 +772,7 @@ export default function SurvivalMode({
       if (!w) return;
       let dt = (now - prev) / 1000; prev = now;
       if (dt > 0.05) dt = 0.05;
-      if (!pausedRef.current && !w.finished) step(dt, w);
+      if (!pausedRef.current && !internalPaused.current && !w.finished) step(dt, w);
       draw(ctx, w);
     };
     raf = requestAnimationFrame(loop);
@@ -725,7 +789,22 @@ export default function SurvivalMode({
 
   return (
     <div className={styles.wrap}>
-      <canvas ref={canvasRef} className={styles.canvas} style={{ aspectRatio: `${W} / ${H}` }} />
+      <div style={{ position: "relative", width: "100%", maxWidth: 380 }}>
+        <canvas ref={canvasRef} className={styles.canvas} style={{ aspectRatio: `${W} / ${H}` }} />
+        {cards && (
+          <div style={cardOverlay}>
+            <div style={cardTitle}>⬆ LEVEL UP! 強化を選べ</div>
+            <div style={cardCol}>
+              {cards.map((c) => (
+                <button key={c.key} style={{ ...cardBtn, borderColor: c.color }} onClick={() => pickCard(c)}>
+                  <span style={{ color: c.color, fontWeight: 700, fontSize: 15 }}>{c.label}</span>
+                  <span style={{ fontSize: 11, opacity: 0.8 }}>{c.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
       <div className={styles.hint}>ドラッグで移動 / 矢印・WASD可 ・ 攻撃は自動 ・ 30秒生存でレベルUP</div>
       <div className={styles.weapons}>
         {weapons.map((w) => (
@@ -737,3 +816,17 @@ export default function SurvivalMode({
     </div>
   );
 }
+
+// レベルUPカード選択オーバーレイ
+const cardOverlay: CSSProperties = {
+  position: "absolute", inset: 0, borderRadius: 8,
+  background: "rgba(10,6,20,0.82)",
+  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 16,
+};
+const cardTitle: CSSProperties = { color: "var(--accent)", fontFamily: "var(--pixel-font)", fontSize: 16, textShadow: "0 0 10px var(--accent)" };
+const cardCol: CSSProperties = { display: "flex", flexDirection: "column", gap: 10, width: "88%", maxWidth: 300 };
+const cardBtn: CSSProperties = {
+  display: "flex", flexDirection: "column", gap: 3, alignItems: "center",
+  padding: "12px 10px", borderRadius: 8, cursor: "pointer",
+  border: "2px solid", background: "rgba(0,0,0,0.45)", color: "#fff", fontFamily: "var(--pixel-font)",
+};
