@@ -128,12 +128,16 @@ export const sfx = {
     const notes = [523, 659, 784, 1047];
     notes.forEach((f, i) => tone({ freq: f, dur: 0.16, type: "triangle", gain: 0.3, delay: i * 0.08 }));
   },
-  // 勝利（ファンファーレ）
+  // 勝利（ファンファーレ：タタタ・ター＋最後に高音メジャーコードを伸ばす）
+  // レベルUP（単純な上昇アルペジオ）とは音色・リズム・和音で明確に差別化。
   playWin() {
-    const seq: [number, number][] = [
-      [523, 0], [659, 0.12], [784, 0.24], [1047, 0.4],
+    // ブラス風の連打→伸ばし（square）
+    const fan: [number, number, number][] = [
+      [784, 0, 0.11], [784, 0.13, 0.11], [784, 0.26, 0.11], [1047, 0.4, 0.55],
     ];
-    seq.forEach(([f, d]) => tone({ freq: f, dur: d === 0.4 ? 0.5 : 0.16, type: "triangle", gain: 0.34, delay: d }));
+    fan.forEach(([f, d, dur]) => tone({ freq: f, dur, type: "square", gain: 0.32, delay: d }));
+    // 最後に高音メジャーコード（C6-E6-G6）を重ねて勝利感を出す
+    [1047, 1319, 1568].forEach((f) => tone({ freq: f, dur: 0.6, type: "triangle", gain: 0.18, delay: 0.4 }));
   },
   // 敗北（下降・力尽きる）
   playLose() {
