@@ -1,0 +1,55 @@
+name: Deploy Frontend to Vercel
+
+# develop の frontend/ が変わったら Vercel 本番へ自動デプロイ（push→deploy ＝ DevOps「まわす」）。
+# バックエンド(Cloud Run)の deploy.yml とセットで、develop push で前後とも自動デプロイされる。
+#
+# 必要な GitHub Secret:
+#   VERCEL_TOKEN … Vercel の Account Settings → Tokens で発行して登録
+# （org/project ID は機密でないので下に直書き）
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vercel
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: team_RqA0snrGJJqLMpt7AD929u5W
+  VERCEL_PROJECT_ID: prj_Ep2MU2rshzrLyLIudP0CRYOICoLd
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel project settings & env (production)
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build (production)
+        run: vercel build --prod --token=$VERCEL_TOKEN
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy prebuilt to production
+        run: vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
