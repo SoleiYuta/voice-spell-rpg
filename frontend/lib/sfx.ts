@@ -105,9 +105,11 @@ function noise(dur: number, gain = 0.3, highpass = 700) {
 }
 
 export const sfx = {
-  // 詠唱：録音開始（溜め音・上昇ハム）
+  // 詠唱：録音開始。送信と対になる“練り始めの開き”。根音＋5度の開放和音をそっと（第3音なし
+  // ＝まだ未完成）。送信で第3音が加わって和音が完成する流れ。低め・サインで幻想系に統一。
   playChantStart() {
-    tone({ freq: 180, freqTo: 360, dur: 0.22, type: "sine", gain: 0.22 });
+    tone({ freq: 262, dur: 0.5, type: "sine", gain: 0.16, attack: 0.22 }); // C4 根音
+    tone({ freq: 392, dur: 0.5, type: "sine", gain: 0.12, attack: 0.26 }); // G4 5度
   },
   // 詠唱：送信（呪文発射）。低めで幻想的なスウェルに、遅れて第3音が加わって和音が完成
   // ＝「魔法が組み上がる／できそう」感を出す。ピッチの滑り・唸り・高音ピコンは避けて不快感を出さない。
