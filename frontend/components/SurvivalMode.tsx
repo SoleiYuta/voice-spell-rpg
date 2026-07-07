@@ -350,8 +350,9 @@ export default function SurvivalMode({
 
       // スポーン
       w.spawnTimer -= dt;
-      // 湧きを約4倍に（間隔を1/4）。処理落ち防止に上限240体
-      const spawnInterval = Math.max(0.08, (1.2 - level * 0.1 - w.elapsed * 0.02) / 4);
+      // 湧き密度をレベル連動で増加（Lv1≒2倍 → Lv5≒4倍）。序盤はフェア、最終ラウンドで大群。上限240体。
+      const spawnMul = Math.min(4, 2 + (level - 1) * 0.5);
+      const spawnInterval = Math.max(0.08, (1.2 - level * 0.1 - w.elapsed * 0.02) / spawnMul);
       if (w.spawnTimer <= 0 && w.enemies.length < 240) { spawnEnemy(w, level); w.spawnTimer = spawnInterval; }
 
       // 敵移動＆接触
@@ -360,7 +361,7 @@ export default function SurvivalMode({
         const d = Math.hypot(ex, ey) || 1;
         e.x += (ex / d) * e.speed * dt; e.y += (ey / d) * e.speed * dt;
         if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
-        if (d < e.r + w.player.r) { if (!debugRef.current) { w.player.hp -= 22 * dt; w.hurt = Math.min(1, w.hurt + 3 * dt); } w.shake = Math.min(8, w.shake + 16 * dt); }
+        if (d < e.r + w.player.r) { if (!debugRef.current) { w.player.hp -= 16 * dt; w.hurt = Math.min(1, w.hurt + 3 * dt); } w.shake = Math.min(8, w.shake + 16 * dt); }
       }
 
       // 自動攻撃（属性ごとに挙動が違う）
