@@ -301,7 +301,7 @@ export default function SurvivalMode({
         if (el === "fire") {
           // 火を敵へゆっくり撃つ → 途中で止まり、止まったら2秒その場で燃え続ける（範囲持続ダメージ）
           const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
-          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130, moveTime: 0.6, stopLife: 2.0, dmg: weapon.damage, r: 22 });
+          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 65, vy: Math.sin(a) * 65, moveTime: 0.6, stopLife: 2.0, dmg: weapon.damage, r: 22 });
         } else if (el === "ice") {
           // 高速落下する氷塊：最寄り最大2体の頭上から
           const targets = [...w.enemies]
