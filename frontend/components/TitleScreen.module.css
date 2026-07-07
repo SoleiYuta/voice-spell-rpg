@@ -1,11 +1,44 @@
 /* ドット魔導書テーマ。パレット: 濃紫#241038 / 表紙#6a2fb0 / クリーム#e9dcb8 / 金#ffd23c */
 .root {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   gap: 6px;
   padding: 32px 16px;
+}
+/* コンテンツは背景演出より前面へ */
+.root > *:not(.embers) {
+  position: relative;
+  z-index: 1;
+}
+
+/* 背景：立ち昇る火の粉 */
+.embers {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.embers > span {
+  position: absolute;
+  bottom: -8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ffb43c;
+  box-shadow: 0 0 6px #ff8c1a;
+  opacity: 0;
+  animation-name: rise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes rise {
+  0% { transform: translateY(0) scale(1); opacity: 0; }
+  12% { opacity: 0.9; }
+  100% { transform: translateY(-360px) scale(0.4); opacity: 0; }
 }
 
 .tag {
@@ -17,9 +50,27 @@
 }
 
 .grimoire {
+  position: relative;
   margin: 8px 0;
   image-rendering: pixelated;
+  display: grid;
+  place-items: center;
 }
+/* 魔導書の後ろで回る魔法陣 */
+.circle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 180px;
+  height: 180px;
+  margin: -90px 0 0 -90px;
+  border: 2px dashed rgba(160, 107, 255, 0.5);
+  border-radius: 50%;
+  box-shadow: 0 0 24px rgba(160, 107, 255, 0.35), inset 0 0 18px rgba(160, 107, 255, 0.2);
+  animation: spin 16s linear infinite;
+  z-index: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .title {
   font-family: var(--pixel-font);
@@ -32,6 +83,11 @@
     2px 2px 0 #241038,
     -2px 2px 0 #241038,
     0 0 14px var(--accent);
+  animation: titlePulse 3.2s ease-in-out infinite;
+}
+@keyframes titlePulse {
+  0%, 100% { text-shadow: 2px 2px 0 #241038, -2px 2px 0 #241038, 0 0 12px var(--accent); }
+  50% { text-shadow: 2px 2px 0 #241038, -2px 2px 0 #241038, 0 0 24px var(--accent); }
 }
 
 .lead {
@@ -53,10 +109,11 @@
   border-radius: 2px;
   cursor: pointer;
   box-shadow: 5px 5px 0 #241038;
-  transition: transform 0.05s steps(2), box-shadow 0.05s steps(2);
+  transition: transform 0.05s steps(2), box-shadow 0.05s steps(2), background 0.1s;
 }
 .start:hover:not(:disabled) {
   background: #ffe88a;
+  box-shadow: 5px 5px 0 #241038, 0 0 18px rgba(255, 210, 60, 0.6);
 }
 .start:active:not(:disabled) {
   transform: translate(3px, 3px);
@@ -65,4 +122,16 @@
 .start:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.hint {
+  font-family: var(--pixel-font);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  opacity: 0.35;
+  margin: 18px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .embers > span, .circle, .title { animation: none; }
 }
