@@ -83,27 +83,6 @@ function tone(o: Tone) {
   osc.stop(t0 + o.dur + 0.03);
 }
 
-function noise(dur: number, gain = 0.3, highpass = 700) {
-  const c = ensureCtx();
-  if (!c || !master || muted) return;
-  const t0 = c.currentTime;
-  const len = Math.max(1, Math.floor(c.sampleRate * dur));
-  const buf = c.createBuffer(1, len, c.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
-  const src = c.createBufferSource();
-  src.buffer = buf;
-  const g = c.createGain();
-  g.gain.value = gain;
-  const filt = c.createBiquadFilter();
-  filt.type = "highpass";
-  filt.frequency.value = highpass;
-  src.connect(filt);
-  filt.connect(g);
-  g.connect(master);
-  src.start(t0);
-}
-
 export const sfx = {
   // 詠唱：録音開始。送信と対になる“練り始めの開き”。根音＋5度の開放和音をそっと（第3音なし
   // ＝まだ未完成）。送信で第3音が加わって和音が完成する流れ。低め・サインで幻想系に統一。
@@ -122,37 +101,35 @@ export const sfx = {
     // 終盤に C5 を薄く重ねて幻想的な空気感（きらめかせず持続で）
     tone({ freq: 523, dur: 0.65, type: "sine", gain: 0.08, attack: 0.4, delay: 0.36 });
   },
-  // 命中（軽い高音チック・throttleで鳴りすぎ防止）
+  // 命中（軽い高音チック・throttleで鳴りすぎ防止）。サインで清潔感、詠唱系と同じ調性(G5)。
   playHit() {
     if (!throttled("hit", 55)) return;
-    tone({ freq: 880, freqTo: 620, dur: 0.05, type: "square", gain: 0.12 });
+    tone({ freq: 784, dur: 0.045, type: "sine", gain: 0.1 });
   },
-  // 撃破（弾ける低音ポップ＋ノイズ）
+  // 撃破（魔法的な弾け＝高→低の2音）。ノイズ/矩形は使わず三角波でやわらかく。
   playKill() {
     if (!throttled("kill", 55)) return;
-    tone({ freq: 300, freqTo: 90, dur: 0.12, type: "square", gain: 0.3 });
-    noise(0.08, 0.14, 500);
+    tone({ freq: 880, dur: 0.07, type: "triangle", gain: 0.24 });
+    tone({ freq: 440, dur: 0.13, type: "triangle", gain: 0.2, delay: 0.05 });
   },
-  // レベルUP（上昇アルペジオ）
+  // レベルUP（上昇アルペジオ C5-E5-G5-C6）。三角波でやわらかく、詠唱系と同じ調性感。
   playLevelUp() {
-    const notes = [523, 659, 784, 1047];
-    notes.forEach((f, i) => tone({ freq: f, dur: 0.16, type: "triangle", gain: 0.3, delay: i * 0.08 }));
+    [523, 659, 784, 1047].forEach((f, i) =>
+      tone({ freq: f, dur: 0.16, type: "triangle", gain: 0.26, delay: i * 0.08 }),
+    );
   },
-  // 勝利（ファンファーレ：タタタ・ター＋最後に高音メジャーコードを伸ばす）
-  // レベルUP（単純な上昇アルペジオ）とは音色・リズム・和音で明確に差別化。
+  // 勝利：短い上昇のあと C メジャー和音がふわっと開いて伸びる（レベルUPより長く・和音で壮大）。
   playWin() {
-    // ブラス風の連打→伸ばし（square）
-    const fan: [number, number, number][] = [
-      [784, 0, 0.11], [784, 0.13, 0.11], [784, 0.26, 0.11], [1047, 0.4, 0.55],
-    ];
-    fan.forEach(([f, d, dur]) => tone({ freq: f, dur, type: "square", gain: 0.32, delay: d }));
-    // 最後に高音メジャーコード（C6-E6-G6）を重ねて勝利感を出す
-    [1047, 1319, 1568].forEach((f) => tone({ freq: f, dur: 0.6, type: "triangle", gain: 0.18, delay: 0.4 }));
+    [392, 523, 659].forEach((f, i) => tone({ freq: f, dur: 0.13, type: "triangle", gain: 0.24, delay: i * 0.1 }));
+    // 到達＝C メジャー和音（C5-E5-G5-C6）を膨らませて伸ばす
+    [523, 659, 784, 1047].forEach((f) =>
+      tone({ freq: f, dur: 0.8, type: "triangle", gain: 0.14, attack: 0.08, delay: 0.34 }),
+    );
   },
-  // 敗北（下降・力尽きる）
+  // 敗北：力尽きる下降（A4→F4→C4）＋低い根音がしぼむ。短調寄りで幻想的な物悲しさ。
   playLose() {
-    tone({ freq: 400, freqTo: 110, dur: 0.6, type: "sawtooth", gain: 0.3 });
-    tone({ freq: 160, freqTo: 70, dur: 0.7, type: "sine", gain: 0.22, delay: 0.05 });
+    [440, 349, 262].forEach((f, i) => tone({ freq: f, dur: 0.32, type: "triangle", gain: 0.22, delay: i * 0.16 }));
+    tone({ freq: 131, dur: 0.9, type: "sine", gain: 0.16, attack: 0.05, delay: 0.32 });
   },
 
   // ── ミュート制御 ──
