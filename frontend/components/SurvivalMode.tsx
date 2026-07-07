@@ -99,6 +99,7 @@ interface World {
   fireAt: Record<string, number>;
   awaitingLevel: boolean;
   shake: number;
+  hurt: number;
   flash: number;
   flashEl: Elem;
   finished: boolean;
@@ -141,6 +142,7 @@ export default function SurvivalMode({
         w.awaitingLevel = false;
         w.player.hp = w.player.maxHp;
         w.player.x = W / 2; w.player.y = H / 2;
+        w.hurt = 0;
         w.flash = 1;
         w.flashEl = toElem(weapons[weapons.length - 1]?.spell_type);
       }
@@ -157,7 +159,7 @@ export default function SurvivalMode({
       enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [], flames: [],
       damageTexts: [], rings: [],
       kills: 0, elapsed: 0, spawnTimer: 0, fireAt: {},
-      awaitingLevel: false, shake: 0, flash: 1, flashEl: toElem(weapons[0]?.spell_type),
+      awaitingLevel: false, shake: 0, hurt: 0, flash: 1, flashEl: toElem(weapons[0]?.spell_type),
       finished: false,
     };
 
@@ -301,7 +303,7 @@ export default function SurvivalMode({
         const d = Math.hypot(ex, ey) || 1;
         e.x += (ex / d) * e.speed * dt; e.y += (ey / d) * e.speed * dt;
         if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
-        if (d < e.r + w.player.r) { if (!debugRef.current) w.player.hp -= 22 * dt; w.shake = Math.min(8, w.shake + 16 * dt); }
+        if (d < e.r + w.player.r) { if (!debugRef.current) { w.player.hp -= 22 * dt; w.hurt = Math.min(1, w.hurt + 3 * dt); } w.shake = Math.min(8, w.shake + 16 * dt); }
       }
 
       // 自動攻撃（属性ごとに挙動が違う）
@@ -468,6 +470,7 @@ export default function SurvivalMode({
       for (const rg of w.rings) { rg.r += 130 * dt; rg.life -= dt; }
       w.rings = w.rings.filter((rg) => rg.life > 0);
       w.shake = Math.max(0, w.shake - 26 * dt);
+      w.hurt = Math.max(0, w.hurt - 2 * dt);
       w.flash = Math.max(0, w.flash - 2 * dt);
     };
 
@@ -489,7 +492,11 @@ export default function SurvivalMode({
     };
 
     const draw = (ctx: CanvasRenderingContext2D, w: World) => {
-      ctx.fillStyle = "#120c1e";
+      // 背景（中心やや明るい放射グラデ＝のっぺり感を解消）
+      const bg = ctx.createRadialGradient(W / 2, H * 0.42, 40, W / 2, H * 0.42, H * 0.78);
+      bg.addColorStop(0, "#1c1230");
+      bg.addColorStop(1, "#0c0716");
+      ctx.fillStyle = bg;
       ctx.fillRect(0, 0, W, H);
 
       ctx.save();
@@ -598,6 +605,22 @@ export default function SurvivalMode({
       ctx.restore();
 
       if (w.flash > 0.01) { ctx.globalAlpha = w.flash * 0.5; ctx.fillStyle = PALETTE[w.flashEl][1]; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+
+      // ビネット（外周を暗く＝画面に深み）
+      const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.34, W / 2, H / 2, H * 0.72);
+      vg.addColorStop(0, "rgba(0,0,0,0)");
+      vg.addColorStop(1, "rgba(0,0,0,0.5)");
+      ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+
+      // 被ダメージ / 低HP の赤い外周フラッシュ
+      const lowPulse = p.hp / p.maxHp <= 0.3 ? 0.22 + 0.18 * Math.abs(Math.sin(w.elapsed * 6)) : 0;
+      const red = Math.max(w.hurt, lowPulse);
+      if (red > 0.01) {
+        const rg = ctx.createRadialGradient(W / 2, H / 2, H * 0.28, W / 2, H / 2, H * 0.72);
+        rg.addColorStop(0, "rgba(255,0,0,0)");
+        rg.addColorStop(1, `rgba(255,30,30,${Math.min(0.6, red)})`);
+        ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+      }
 
       // ===== HUD =====
       // 上部パネル
