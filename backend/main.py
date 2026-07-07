@@ -147,9 +147,23 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     else:
         volume = "quiet"
 
-    # 詰まり回数 = 発話区間（連続Trueブロック）の数 - 1
-    segments = int(np.sum(voiced[1:] & ~voiced[:-1])) + (1 if bool(voiced[0]) else 0)
-    hesitation_count = max(0, segments - 1)
+    # 詰まり回数 = 発話の途中に入る「一定以上の無音(=はっきりした間)」の数。
+    # 音節・単語間の自然な微小な無音(数十ms)まで数えると過大になるため、
+    # 前後の無音を除いた発話区間内で、MIN_PAUSE_SEC 以上続く無音ブロックだけを1回と数える。
+    MIN_PAUSE_SEC = 0.35
+    min_pause = max(1, int(MIN_PAUSE_SEC * sr / hop))
+    voiced_idx = np.flatnonzero(voiced)
+    hesitation_count = 0
+    if voiced_idx.size:
+        inner = voiced[voiced_idx[0] : voiced_idx[-1] + 1]  # 前後の無音を除いた発話区間
+        run = 0
+        for v in inner:
+            if v:
+                if run >= min_pause:  # 直前の無音が閾値以上なら「詰まり」1回
+                    hesitation_count += 1
+                run = 0
+            else:
+                run += 1
 
     # 詠唱の強さ intensity(0..1)：声量 + 抑揚(発話フレームRMSの変動係数)。
     # 棒読み=抑揚が小さく低め、気迫のこもった詠唱=大きく張り・抑揚があり高くなる。
