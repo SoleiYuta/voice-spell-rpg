@@ -75,6 +75,7 @@ interface IceFall { x: number; y: number; vy: number; targetY: number; dmg: numb
 interface Hole { x: number; y: number; life: number; max: number; dmg: number; r: number; }
 interface Beam { x: number; y: number; angle: number; life: number; max: number; dmg: number; hit: Set<Enemy>; }
 interface Tornado { x: number; y: number; angle: number; speed: number; age: number; dmg: number; r: number; }
+interface Flame { x: number; y: number; vx: number; vy: number; moveTime: number; stopLife: number; dmg: number; r: number; } // 炎弾（途中で止まって燃え続ける）
 
 interface World {
   player: { x: number; y: number; hp: number; maxHp: number; r: number };
@@ -86,6 +87,7 @@ interface World {
   holes: Hole[];
   beams: Beam[];
   tornados: Tornado[];
+  flames: Flame[];
   kills: number;
   elapsed: number;
   spawnTimer: number;
@@ -128,7 +130,7 @@ export default function SurvivalMode({
       const w = worldRef.current;
       if (w) {
         w.elapsed = 0;
-        w.enemies = []; w.shots = []; w.iceFalls = []; w.holes = []; w.beams = []; w.tornados = [];
+        w.enemies = []; w.shots = []; w.iceFalls = []; w.holes = []; w.beams = []; w.tornados = []; w.flames = [];
         w.spawnTimer = 0;
         w.awaitingLevel = false;
         w.player.hp = w.player.maxHp;
@@ -146,7 +148,7 @@ export default function SurvivalMode({
   useEffect(() => {
     worldRef.current = {
       player: { x: W / 2, y: H / 2, hp: 100, maxHp: 100, r: 12 },
-      enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [],
+      enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [], flames: [],
       kills: 0, elapsed: 0, spawnTimer: 0, fireAt: {},
       awaitingLevel: false, shake: 0, flash: 1, flashEl: toElem(weapons[0]?.spell_type),
       finished: false,
@@ -297,9 +299,9 @@ export default function SurvivalMode({
         if (!best) continue;
 
         if (el === "fire") {
-          // 火を敵に向かって撃つ：貫通する炎弾（見た目は FLAME ドット絵）
+          // 火を敵へゆっくり撃つ → 途中で止まり、止まったら2秒その場で燃え続ける（範囲持続ダメージ）
           const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
-          w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 270, vy: Math.sin(a) * 270, dmg: weapon.damage, el: "fire", life: 1.8, hit: new Set<Enemy>() });
+          w.flames.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130, moveTime: 0.6, stopLife: 2.0, dmg: weapon.damage, r: 22 });
         } else if (el === "ice") {
           // 高速落下する氷塊：最寄り最大2体の頭上から
           const targets = [...w.enemies]
@@ -349,6 +351,21 @@ export default function SurvivalMode({
         }
       }
       w.shots = w.shots.filter((s) => s.life > 0 && s.x > -20 && s.x < W + 20 && s.y > -20 && s.y < H + 20);
+
+      // 炎ゾーン：途中で止まり、止まったら2秒その場で燃え続ける（範囲持続ダメージ）
+      for (const fl of w.flames) {
+        if (fl.moveTime > 0) { fl.x += fl.vx * dt; fl.y += fl.vy * dt; fl.moveTime -= dt; }
+        else fl.stopLife -= dt;
+        for (const e of w.enemies) {
+          if (e.hp <= 0) continue;
+          if (Math.hypot(e.x - fl.x, e.y - fl.y) < fl.r + e.r) {
+            e.hp -= fl.dmg * dt * 3;
+            if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "fire", 18, 200); w.shake = Math.min(8, w.shake + 3); }
+          }
+        }
+        if (Math.random() < 0.5) burst(w, fl.x + (Math.random() - 0.5) * fl.r, fl.y + (Math.random() - 0.5) * fl.r, "fire", 1, 25);
+      }
+      w.flames = w.flames.filter((f) => f.stopLife > 0);
 
       // 落下氷塊：着弾で広範囲ダメージ
       for (const ic of w.iceFalls) {
@@ -408,7 +425,7 @@ export default function SurvivalMode({
           const d = Math.hypot(tx, ty) || 1;
           if (d < to.r) {
             e.x += (tx / d) * 220 * dt; e.y += (ty / d) * 220 * dt; // 外向きノックバック
-            e.hp -= to.dmg * dt * 1.2;
+            e.hp -= to.dmg * dt * 3.6; // 火力を約3倍に
             if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "wind", 16, 190); w.shake = Math.min(8, w.shake + 2); }
           }
         }
@@ -518,11 +535,13 @@ export default function SurvivalMode({
         ctx.stroke(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
       }
 
+      // 炎ゾーン（止まると少し大きく燃える）
+      for (const fl of w.flames) drawFlame(fl.x, fl.y, fl.moveTime > 0 ? 2 : 2.5);
+
       for (const s of w.shots) {
         const pal = PALETTE[s.el];
         ctx.shadowColor = pal[2]; ctx.shadowBlur = 10;
-        if (s.el === "fire") { drawFlame(s.x, s.y, 2); }
-        else { px(s.x, s.y, 5, pal[2]); px(s.x, s.y, 3, pal[0]); }
+        px(s.x, s.y, 5, pal[2]); px(s.x, s.y, 3, pal[0]);
         ctx.shadowBlur = 0;
       }
 
