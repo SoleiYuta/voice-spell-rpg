@@ -1,0 +1,161 @@
+// 効果音（Web Audio API で簡易合成）。#56 / 担当: kazuma660
+// 音源ファイル不要＝ライセンス事故なし。sfx.playCast() 等を呼ぶだけ。
+// - 初回のユーザー操作(タップ/クリック/キー)で AudioContext を resume（スマホ対応）
+// - ミュートは localStorage に永続。sfx.toggleMute() / sfx.isMuted()
+// - 高頻度SE（命中/撃破）は throttle 済みなので何度呼んでも鳴りすぎない
+
+const MUTE_KEY = "aigrimoire_sfx_muted";
+const MASTER_GAIN = 0.5;
+
+let ctx: AudioContext | null = null;
+let master: GainNode | null = null;
+let muted = false;
+let gestureBound = false;
+const lastAt: Record<string, number> = {};
+
+// 初期ミュート状態を復元（SSR安全）
+if (typeof window !== "undefined") {
+  muted = window.localStorage?.getItem(MUTE_KEY) === "1";
+}
+
+function ensureCtx(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  if (!ctx) {
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = muted ? 0 : MASTER_GAIN;
+    master.connect(ctx.destination);
+  }
+  if (ctx.state === "suspended") void ctx.resume().catch(() => {});
+  return ctx;
+}
+
+// 初回のユーザー操作で AudioContext を起こす（モバイルの自動再生制限対策）
+function bindGesture() {
+  if (gestureBound || typeof window === "undefined") return;
+  gestureBound = true;
+  const evs = ["pointerdown", "touchstart", "keydown"] as const;
+  const handler = () => {
+    ensureCtx();
+    evs.forEach((e) => window.removeEventListener(e, handler, true));
+  };
+  evs.forEach((e) => window.addEventListener(e, handler, true));
+}
+if (typeof window !== "undefined") bindGesture();
+
+// 呼びすぎ防止（命中/撃破など）
+function throttled(key: string, ms: number): boolean {
+  const t = typeof performance !== "undefined" ? performance.now() : Date.now();
+  if (lastAt[key] && t - lastAt[key] < ms) return false;
+  lastAt[key] = t;
+  return true;
+}
+
+interface Tone {
+  freq: number;
+  dur: number;
+  type?: OscillatorType;
+  gain?: number;
+  freqTo?: number; // 指定するとその周波数へスイープ
+  delay?: number;
+}
+
+function tone(o: Tone) {
+  const c = ensureCtx();
+  if (!c || !master || muted) return;
+  const t0 = c.currentTime + (o.delay ?? 0);
+  const osc = c.createOscillator();
+  const g = c.createGain();
+  osc.type = o.type ?? "square";
+  osc.frequency.setValueAtTime(o.freq, t0);
+  if (o.freqTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, o.freqTo), t0 + o.dur);
+  const peak = o.gain ?? 0.4;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.dur);
+  osc.connect(g);
+  g.connect(master);
+  osc.start(t0);
+  osc.stop(t0 + o.dur + 0.03);
+}
+
+function noise(dur: number, gain = 0.3, highpass = 700) {
+  const c = ensureCtx();
+  if (!c || !master || muted) return;
+  const t0 = c.currentTime;
+  const len = Math.max(1, Math.floor(c.sampleRate * dur));
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const g = c.createGain();
+  g.gain.value = gain;
+  const filt = c.createBiquadFilter();
+  filt.type = "highpass";
+  filt.frequency.value = highpass;
+  src.connect(filt);
+  filt.connect(g);
+  g.connect(master);
+  src.start(t0);
+}
+
+export const sfx = {
+  // 詠唱：録音開始（溜め音・上昇ハム）
+  playChantStart() {
+    tone({ freq: 180, freqTo: 360, dur: 0.22, type: "sine", gain: 0.22 });
+  },
+  // 詠唱：送信（呪文発射・下降ザップ＋ノイズ）
+  playCast() {
+    tone({ freq: 720, freqTo: 160, dur: 0.28, type: "sawtooth", gain: 0.32 });
+    noise(0.14, 0.16, 900);
+  },
+  // 命中（軽い高音チック・throttleで鳴りすぎ防止）
+  playHit() {
+    if (!throttled("hit", 55)) return;
+    tone({ freq: 880, freqTo: 620, dur: 0.05, type: "square", gain: 0.12 });
+  },
+  // 撃破（弾ける低音ポップ＋ノイズ）
+  playKill() {
+    if (!throttled("kill", 55)) return;
+    tone({ freq: 300, freqTo: 90, dur: 0.12, type: "square", gain: 0.3 });
+    noise(0.08, 0.14, 500);
+  },
+  // レベルUP（上昇アルペジオ）
+  playLevelUp() {
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((f, i) => tone({ freq: f, dur: 0.16, type: "triangle", gain: 0.3, delay: i * 0.08 }));
+  },
+  // 勝利（ファンファーレ）
+  playWin() {
+    const seq: [number, number][] = [
+      [523, 0], [659, 0.12], [784, 0.24], [1047, 0.4],
+    ];
+    seq.forEach(([f, d]) => tone({ freq: f, dur: d === 0.4 ? 0.5 : 0.16, type: "triangle", gain: 0.34, delay: d }));
+  },
+  // 敗北（下降・力尽きる）
+  playLose() {
+    tone({ freq: 400, freqTo: 110, dur: 0.6, type: "sawtooth", gain: 0.3 });
+    tone({ freq: 160, freqTo: 70, dur: 0.7, type: "sine", gain: 0.22, delay: 0.05 });
+  },
+
+  // ── ミュート制御 ──
+  isMuted(): boolean {
+    return muted;
+  },
+  setMuted(m: boolean) {
+    muted = m;
+    if (typeof window !== "undefined") window.localStorage?.setItem(MUTE_KEY, m ? "1" : "0");
+    if (master) master.gain.value = m ? 0 : MASTER_GAIN;
+  },
+  toggleMute(): boolean {
+    this.setMuted(!muted);
+    return muted;
+  },
+  /** 明示的に AudioContext を起こしたい時（任意）。 */
+  resume() {
+    ensureCtx();
+  },
+};
