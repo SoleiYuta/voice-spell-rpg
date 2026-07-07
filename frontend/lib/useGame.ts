@@ -30,6 +30,7 @@ export type GamePhase =
   | "evaluating"
   | "forged"
   | "survival"
+  | "finishing"
   | "gameResult";
 
 export const SURVIVE_SEC = 30; // 生存目標（秒）
@@ -128,7 +129,7 @@ function reducer(state: GameState, action: Action): GameState {
     case "LEVEL_UP":
       return { ...state, phase: "presenting", level: action.level };
     case "FINISH":
-      return { ...state, outcome: action.outcome };
+      return { ...state, phase: "finishing", outcome: action.outcome };
     case "GAME_RESULT":
       return { ...state, phase: "gameResult", result: action.result };
     case "ERROR":

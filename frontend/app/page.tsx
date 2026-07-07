@@ -14,7 +14,7 @@ import ResultScreen from "@/components/ResultScreen";
 import TitleScreen from "@/components/TitleScreen";
 import SpellCard from "@/components/SpellCard";
 import RecordButton from "@/components/RecordButton";
-import EvaluatingOverlay from "@/components/EvaluatingOverlay";
+import LoadingScreen from "@/components/LoadingScreen";
 import SurvivalMode from "@/components/SurvivalMode";
 import { moodFromMatchRate } from "@/components/PixelGrimoire";
 
@@ -110,13 +110,14 @@ export default function Home() {
   }
 
   const isChant = CHANT_PHASES.has(state.phase);
-  const showSurvival = state.survivalStarted && state.phase !== "gameResult";
+  const showSurvival =
+    state.survivalStarted && state.phase !== "gameResult" && state.phase !== "finishing";
 
   // 詠唱パートのUI（初回=フルスクリーン / レベルUP時=戦線の上にオーバーレイ、で使い回す）
   const chantUI = (
     <>
       {state.phase === "presenting" && (
-        <EvaluatingOverlay visible message="魔導書が新たな呪文を授けている……" />
+        <LoadingScreen message="魔導書が新たな呪文を授けている" />
       )}
 
       {(state.phase === "ready" || state.phase === "recording") && state.spell && (
@@ -139,7 +140,7 @@ export default function Home() {
         </div>
       )}
 
-      {state.phase === "evaluating" && <EvaluatingOverlay visible />}
+      {state.phase === "evaluating" && <LoadingScreen message="魔導書が声を見極めている" />}
 
       {state.phase === "forged" && state.last && (
         <div style={{ textAlign: "center" }}>
@@ -189,6 +190,19 @@ export default function Home() {
             </div>
           )}
         </div>
+      )}
+
+      {/* 勝敗確定 → 結果(診断/VTuberキャラ提案)生成中のロード画面 */}
+      {state.phase === "finishing" && (
+        <LoadingScreen
+          tone={state.outcome === "victory" ? "victory" : "defeat"}
+          badge={state.outcome === "victory" ? "🏆" : "💀"}
+          message={
+            state.outcome === "victory"
+              ? "魔導書があなたの声を読み解いている"
+              : "魔導書が最期の詠唱を刻んでいる"
+          }
+        />
       )}
 
       {state.phase === "gameResult" && state.result && (
