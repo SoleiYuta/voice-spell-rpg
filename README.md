@@ -2,10 +2,25 @@
 
 **codename: AI Grimoire (仮)** | 正式タイトル未定
 
-音声で呪文を唱えて戦う2Dダンジョン探索ゲーム。
-AIゲームマスターがプレイヤーの声を評価し、戦闘をリアルタイムで変化させる。
+声で呪文を詠唱して戦う、ブラウザで遊べる2部構成のアクションゲーム。
+
+1. **詠唱パート** … 声で呪文を唱えると、AIが声（発音の正確さ・声量・抑揚＝気迫）を評価し、魔法の「強さ」を決める。
+2. **ヴァンサバモード** … その魔法で押し寄せる敵をなぎ倒して30秒サバイブ。生き残るたびにレベルUP＝AIがより難しい新呪文を出題し、魔法が増えていく（炎/氷/雷/闇/光/風で挙動が変化）。
+
+**正しく・気迫を込めて唱えるほど魔法が強くなる「適応型AIゲームマスター」**が核。
 
 ---
+
+## 遊ぶ
+
+**公開URL:** https://voice-spell-rpg.vercel.app （マイク許可が必要 / PC・スマホ対応）
+
+## 技術スタック
+
+- **フロント**: Next.js 15 + TypeScript（Canvas でヴァンサバ描画）→ Vercel
+- **バックエンド**: FastAPI → Cloud Run（`/generate-spell` 呪文生成 / `/evaluate` 音声評価 / `/result` 診断）
+- **AI**: Gemini 2.5 Flash（Vertex AI・呪文生成/講評/診断）＋ Google Speech-to-Text（音声認識）＋ soundfile/numpy（声量・抑揚の音響解析）
+- **CI/CD**: GitHub Actions（develop への push で Cloud Run 自動デプロイ・Workload Identity Federation 鍵レス）
 
 ## チームメンバーへ
 
@@ -23,9 +38,9 @@ wiki/AI-Grimoire/tech/採用技術まとめ → 確定スタック
 
 ```
 voice-spell-rpg/
+├── frontend/       Web フロント (Next.js + TypeScript / Vercel)
+├── backend/        AI バックエンド (FastAPI / Cloud Run)
 ├── wiki/           設計・仕様ドキュメント (Obsidian Vault)
-├── unity/          Unityプロジェクト (未作成)
-├── backend/        FastAPIバックエンド (未作成)
 ├── AGENTS.md       AI (Claude Code / Codex) 向け指示
 └── .gitignore
 ```
