@@ -11,6 +11,7 @@
 
 import { useEffect, useRef } from "react";
 import type { Weapon } from "@/lib/useGame";
+import { sfx } from "@/lib/sfx";
 import styles from "./SurvivalMode.module.css";
 
 export interface SurvivalModeProps {
@@ -240,12 +241,15 @@ export default function SurvivalMode({
         burst(w, e.x, e.y, el, 20, 210);
         w.shake = Math.min(8, w.shake + 3);
         if (el === "ice") for (let k = 0; k < 5; k++) burst(w, e.x, e.y, "ice", 3, 90);
+      } else {
+        sfx.playHit();
       }
     };
 
     const step = (dt: number, w: World) => {
       const level = weaponsRef.current.length;
       w.elapsed += dt;
+      const kills0 = w.kills; // このフレームで撃破が増えたら効果音（throttle済み）
 
       if (!debugRef.current && !w.finished && w.player.hp <= 0) { w.finished = true; onFinishRef.current("defeat"); return; }
       if (!debugRef.current && !w.finished && w.elapsed >= durRef.current) {
@@ -432,6 +436,8 @@ export default function SurvivalMode({
       }
       const TM = 80; // 場外マージン
       w.tornados = w.tornados.filter((t) => t.age < 8 && t.x > -TM && t.x < W + TM && t.y > -TM && t.y < H + TM);
+
+      if (w.kills > kills0) sfx.playKill();
 
       // 死亡敵の一括除去
       w.enemies = w.enemies.filter((e) => e.hp > 0);

@@ -17,6 +17,7 @@ import RecordButton from "@/components/RecordButton";
 import EvaluatingOverlay from "@/components/EvaluatingOverlay";
 import SurvivalMode from "@/components/SurvivalMode";
 import { moodFromMatchRate } from "@/components/PixelGrimoire";
+import { sfx } from "@/lib/sfx";
 
 const CHANT_PHASES = new Set(["presenting", "ready", "recording", "evaluating", "forged"]);
 
@@ -31,6 +32,11 @@ export default function Home() {
   const [micError, setMicError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
   const [dbgElem, setDbgElem] = useState<string>("fire"); // "all" or 単体属性
+  const [muted, setMuted] = useState(false); // SE ミュート（初期値は localStorage から同期）
+
+  useEffect(() => {
+    setMuted(sfx.isMuted());
+  }, []);
 
   // デバッグ装備：単体属性 or 全部（切替で属性ごとに単独で見られる）
   const debugWeapons = useMemo<Weapon[]>(() => {
@@ -130,9 +136,13 @@ export default function Home() {
               recording={state.phase === "recording"}
               onBegin={() => {
                 setMicError(null);
+                sfx.playChantStart();
                 beginRecord();
               }}
-              onCast={cast}
+              onCast={(blob) => {
+                sfx.playCast();
+                cast(blob);
+              }}
               onError={setMicError}
             />
           </div>
@@ -162,6 +172,14 @@ export default function Home() {
 
   return (
     <main style={{ maxWidth: 560, margin: "0 auto", padding: 16, textAlign: "center" }}>
+      <button
+        onClick={() => setMuted(sfx.toggleMute())}
+        aria-label={muted ? "効果音をオン" : "効果音をオフ"}
+        title={muted ? "効果音: OFF" : "効果音: ON"}
+        style={muteBtn}
+      >
+        {muted ? "🔇" : "🔊"}
+      </button>
       <h1 style={{ color: "var(--accent)", fontFamily: "var(--pixel-font)", fontSize: 22, margin: "4px 0 10px" }}>
         AI GRIMOIRE
       </h1>
@@ -180,8 +198,15 @@ export default function Home() {
             weapons={state.weapons}
             durationSec={SURVIVE_SEC}
             paused={state.phase !== "survival"}
-            onLevelUp={levelUp}
-            onFinish={finish}
+            onLevelUp={(lv) => {
+              sfx.playLevelUp();
+              levelUp(lv);
+            }}
+            onFinish={(outcome) => {
+              if (outcome === "victory") sfx.playWin();
+              else sfx.playLose();
+              finish(outcome);
+            }}
           />
           {isChant && (
             <div style={overlay}>
@@ -207,6 +232,24 @@ export default function Home() {
     </main>
   );
 }
+
+const muteBtn: CSSProperties = {
+  position: "fixed",
+  top: 10,
+  right: 10,
+  zIndex: 60,
+  width: 40,
+  height: 40,
+  fontSize: 18,
+  lineHeight: "40px",
+  padding: 0,
+  textAlign: "center",
+  color: "#e9dcb8",
+  background: "rgba(36,16,56,0.85)",
+  border: "2px solid var(--accent)",
+  borderRadius: 8,
+  cursor: "pointer",
+};
 
 const btn: CSSProperties = {
   marginTop: 12,

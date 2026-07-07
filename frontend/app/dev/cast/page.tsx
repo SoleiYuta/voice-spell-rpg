@@ -8,7 +8,19 @@ import TitleScreen from "@/components/TitleScreen";
 import SpellCard from "@/components/SpellCard";
 import RecordButton from "@/components/RecordButton";
 import EvaluatingOverlay from "@/components/EvaluatingOverlay";
+import { sfx } from "@/lib/sfx";
 import type { SpellData } from "@/lib/types";
+
+// #56 効果音の単体確認。クリックで各SEを個別に鳴らせる。
+const SFX_TESTS: { label: string; play: () => void }[] = [
+  { label: "詠唱開始", play: () => sfx.playChantStart() },
+  { label: "詠唱送信", play: () => sfx.playCast() },
+  { label: "命中", play: () => sfx.playHit() },
+  { label: "撃破", play: () => sfx.playKill() },
+  { label: "レベルUP", play: () => sfx.playLevelUp() },
+  { label: "勝利", play: () => sfx.playWin() },
+  { label: "敗北", play: () => sfx.playLose() },
+];
 
 const MOCK_SPELL: SpellData = {
   spell_text: "紅蓮の炎よ、我が敵を焼き尽くせ",
@@ -37,6 +49,19 @@ export default function CastDevPage() {
             {p}
           </button>
         ))}
+      </div>
+
+      {/* #56 効果音テスト：各SEを個別に鳴らして確認 */}
+      <div style={sfxBar}>
+        <strong style={{ fontFamily: "var(--pixel-font)", fontSize: 13 }}>🔊 SE test</strong>
+        {SFX_TESTS.map((s) => (
+          <button key={s.label} style={chip(false)} onClick={() => { s.play(); addLog(`SE: ${s.label}`); }}>
+            {s.label}
+          </button>
+        ))}
+        <button style={chip(false)} onClick={() => addLog(`mute → ${sfx.toggleMute()}`)}>
+          mute切替
+        </button>
       </div>
 
       {error && <p style={{ color: "tomato" }}>{error}</p>}
@@ -94,6 +119,15 @@ export default function CastDevPage() {
 }
 
 const bar: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+  padding: "10px 0",
+  borderBottom: "1px solid rgba(160,107,255,0.3)",
+  marginBottom: 16,
+};
+const sfxBar: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   gap: 8,
