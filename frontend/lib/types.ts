@@ -35,13 +35,26 @@ export interface PlayerProfile {
 }
 
 // GET /result/{session_id} のレスポンス（診断・[[11_リザルト診断設計]]）
+export interface VtuberPersona {
+  character_name: string;
+  attribute: string;
+  catchphrase: string;
+  character_setting: string;
+  portrait_prompt: string;
+}
+
 export interface ResultData {
   session_id: string;
   type_key: string;
   type_name: string;
   best_floor: { floor_id: string; spell_text: string; spell_power: number };
   ai_verdict: string;
-  stats: { avg_volume: Volume; total_hesitation: number; avg_match_rate: number };
+  stats: { avg_volume: Volume; total_hesitation: number; avg_match_rate: number; avg_speed_wpm?: number };
+  // #55: VTuber声質タイプ＋キャラ提案（backend /result が返す・任意）
+  voice_type_name?: string;
+  voice_type_desc?: string;
+  vtuber_persona?: VtuberPersona;
+  improvement_tip?: string;
 }
 
 // /result に渡す1フロア分のログ（useGame の履歴から組み立てる）
