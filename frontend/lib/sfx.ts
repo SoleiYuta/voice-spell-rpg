@@ -104,30 +104,38 @@ export const sfx = {
   // 属性攻撃の発射音（属性ごとに音色を変える）。自動連射なので短く控えめ＋属性別throttle。
   // 幻想系パレット（サイン/三角）に統一。
   playAttack(el: string) {
-    if (!throttled("atk-" + el, 90)) return;
+    if (!throttled("atk-" + el, 100)) return;
     switch (el) {
-      case "fire": // ボッと燃え立つ低め
-        tone({ freq: 330, freqTo: 200, dur: 0.11, type: "triangle", gain: 0.16 });
+      case "fire": // ゴォッと燃え上がる：低い body ＋ 上でゆらぐ炎
+        tone({ freq: 190, freqTo: 120, dur: 0.34, type: "triangle", gain: 0.18 });
+        tone({ freq: 430, freqTo: 250, dur: 0.28, type: "triangle", gain: 0.11, delay: 0.02 });
         break;
-      case "ice": // キンと澄んだ高音
-        tone({ freq: 1568, dur: 0.06, type: "sine", gain: 0.14 });
-        tone({ freq: 2093, dur: 0.05, type: "sine", gain: 0.1, delay: 0.04 });
+      case "ice": // キラキラ…と澄んだ高音が下降して余韻
+        [2093, 1760, 1568].forEach((f, i) =>
+          tone({ freq: f, dur: 0.18, type: "sine", gain: 0.13, delay: i * 0.06 }),
+        );
+        tone({ freq: 1046, dur: 0.32, type: "sine", gain: 0.07, delay: 0.04, attack: 0.03 });
         break;
-      case "thunder": // バチッと鋭い下降
-        tone({ freq: 1200, freqTo: 420, dur: 0.07, type: "triangle", gain: 0.16 });
+      case "thunder": // バチッと鋭い一撃＋ゴロと低い残響
+        tone({ freq: 1500, freqTo: 320, dur: 0.09, type: "triangle", gain: 0.18 });
+        tone({ freq: 230, freqTo: 140, dur: 0.24, type: "sine", gain: 0.12, delay: 0.05 });
         break;
-      case "dark": // ドゥンと低く沈む
-        tone({ freq: 165, freqTo: 110, dur: 0.17, type: "sine", gain: 0.2 });
+      case "dark": // ドゥゥンと低く沈み込む（swellでじわっと）
+        tone({ freq: 150, freqTo: 90, dur: 0.5, type: "sine", gain: 0.2, attack: 0.12 });
+        tone({ freq: 200, freqTo: 140, dur: 0.42, type: "sine", gain: 0.1, attack: 0.16, delay: 0.02 });
         break;
-      case "light": // シャンと明るい二音
-        tone({ freq: 988, dur: 0.09, type: "sine", gain: 0.13 });
-        tone({ freq: 1319, dur: 0.09, type: "sine", gain: 0.1, delay: 0.02 });
+      case "light": // シャァンと明るい和音がパッと開いて伸びる
+        [784, 988, 1319].forEach((f, i) =>
+          tone({ freq: f, dur: 0.32, type: "sine", gain: 0.11, delay: i * 0.03, attack: 0.04 }),
+        );
+        tone({ freq: 1568, dur: 0.24, type: "sine", gain: 0.07, delay: 0.06 });
         break;
-      case "wind": // フォッと上へ抜ける
-        tone({ freq: 520, freqTo: 940, dur: 0.12, type: "sine", gain: 0.12 });
+      case "wind": // フュゥと抜ける上昇＋戻る風
+        tone({ freq: 420, freqTo: 1100, dur: 0.3, type: "sine", gain: 0.13, attack: 0.05 });
+        tone({ freq: 640, freqTo: 320, dur: 0.26, type: "sine", gain: 0.08, delay: 0.1 });
         break;
       default:
-        tone({ freq: 660, dur: 0.06, type: "sine", gain: 0.12 });
+        tone({ freq: 660, dur: 0.12, type: "sine", gain: 0.12 });
     }
   },
   // 命中（軽い高音チック・throttleで鳴りすぎ防止）。サインで清潔感、詠唱系と同じ調性(G5)。
