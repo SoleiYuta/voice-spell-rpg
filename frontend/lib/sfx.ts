@@ -107,13 +107,14 @@ export const sfx = {
   playChantStart() {
     tone({ freq: 180, freqTo: 360, dur: 0.22, type: "sine", gain: 0.22 });
   },
-  // 詠唱：送信（呪文発射）。「きゅりりん」＝上昇スイープ＋高音のキラキラ（トリル）。
+  // 詠唱：送信（呪文発射）。高音のキラキラ（りりん）主体。頭の「ぽ」は無くし、
+  // 短く高めのサイン波でスッと立ち上げてからトリルへ。
   playCast() {
-    // きゅ：短い上昇スイープ
-    tone({ freq: 520, freqTo: 1300, dur: 0.13, type: "triangle", gain: 0.3 });
-    // りりん：高音の粒を上下に散らしてキラキラ感
+    // 立ち上がり（高め・サイン・短くして「ぽ」感を消す）
+    tone({ freq: 1046, freqTo: 1500, dur: 0.07, type: "sine", gain: 0.18 });
+    // りりん：高音の粒を散らしてキラキラ感
     const twinkle: [number, number][] = [
-      [1568, 0.12], [1319, 0.18], [1760, 0.24],
+      [1568, 0.07], [1319, 0.14], [1760, 0.21],
     ];
     twinkle.forEach(([f, d]) => tone({ freq: f, dur: 0.1, type: "sine", gain: 0.22, delay: d }));
   },
