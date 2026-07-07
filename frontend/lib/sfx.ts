@@ -106,45 +106,48 @@ export const sfx = {
   playAttack(el: string) {
     if (!throttled("atk-" + el, 100)) return;
     switch (el) {
-      case "fire": // ゴォォと燃え上がる：低いbody＋うねる炎＋パチパチ弾ける火の粉
-        tone({ freq: 175, freqTo: 110, dur: 0.8, type: "triangle", gain: 0.17, attack: 0.06 });
-        tone({ freq: 400, freqTo: 240, dur: 0.6, type: "triangle", gain: 0.1, attack: 0.05 });
-        [520, 640, 470, 700].forEach((f, i) =>
-          tone({ freq: f, dur: 0.08, type: "triangle", gain: 0.06, delay: 0.1 + i * 0.14 }),
-        ); // 火の粉のパチパチ
+      // 火：撃ち出して“その場で燃え続ける”→ 撃ち出し＋パチパチ持続する炎
+      case "fire":
+        tone({ freq: 320, freqTo: 170, dur: 0.16, type: "triangle", gain: 0.16 }); // 撃ち出し
+        tone({ freq: 150, dur: 0.75, type: "triangle", gain: 0.1, attack: 0.08 }); // 燃え続ける body
+        [520, 470, 640, 500, 700, 560].forEach((f, i) =>
+          tone({ freq: f, dur: 0.05, type: "triangle", gain: 0.05, delay: 0.14 + i * 0.1 }),
+        ); // パチパチ爆ぜる火
         break;
-      case "ice": // シャラ…と高音が上から降り、下に澄んだ和音が残る
-        [2349, 2093, 1760, 1568, 1319].forEach((f, i) =>
-          tone({ freq: f, dur: 0.16, type: "sine", gain: 0.11, delay: i * 0.06 }),
-        ); // きらめきの下降
-        [1046, 1319].forEach((f) =>
-          tone({ freq: f, dur: 0.6, type: "sine", gain: 0.06, delay: 0.06, attack: 0.05 }),
-        ); // 澄んだ余韻
+      // 氷：頭上から高速落下して着弾 → 落ちる笛（下降）＋パリンと砕ける着弾
+      case "ice":
+        tone({ freq: 1500, freqTo: 520, dur: 0.26, type: "sine", gain: 0.12 }); // 落下の笛
+        [2349, 1976, 2093].forEach((f, i) =>
+          tone({ freq: f, dur: 0.09, type: "sine", gain: 0.1, delay: 0.24 + i * 0.03 }),
+        ); // 着弾の砕け（パリン）
+        tone({ freq: 1046, dur: 0.3, type: "sine", gain: 0.05, delay: 0.26, attack: 0.03 }); // 余韻
         break;
-      case "thunder": // ビシャッと閃光→バチバチ→ゴロゴロ低い残響
-        tone({ freq: 1600, freqTo: 300, dur: 0.1, type: "triangle", gain: 0.18 });
-        [900, 1300, 700].forEach((f, i) =>
-          tone({ freq: f, freqTo: f * 0.5, dur: 0.05, type: "triangle", gain: 0.09, delay: 0.09 + i * 0.05 }),
-        ); // バチバチ
-        tone({ freq: 220, freqTo: 130, dur: 0.36, type: "sine", gain: 0.12, delay: 0.06 }); // 低い残響
+      // 雷：最寄りから最大3体へ即着弾で連鎖 → 初撃＋連鎖3タップ＋低い残響
+      case "thunder":
+        tone({ freq: 1700, freqTo: 380, dur: 0.08, type: "triangle", gain: 0.18 }); // 初撃
+        [1300, 1550, 1150].forEach((f, i) =>
+          tone({ freq: f, freqTo: f * 0.45, dur: 0.045, type: "triangle", gain: 0.11, delay: 0.07 + i * 0.055 }),
+        ); // 敵→敵→敵へ連鎖する3タップ
+        tone({ freq: 200, freqTo: 130, dur: 0.22, type: "sine", gain: 0.09, delay: 0.05 }); // 残響
         break;
-      case "dark": // ドゥゥゥンと深く沈む：低根音＋不穏な倍音＋じわり湧く気配
-        tone({ freq: 120, freqTo: 78, dur: 1.15, type: "sine", gain: 0.2, attack: 0.25 });
-        tone({ freq: 180, freqTo: 120, dur: 1.0, type: "sine", gain: 0.1, attack: 0.3 });
-        tone({ freq: 320, freqTo: 250, dur: 0.9, type: "sine", gain: 0.05, attack: 0.4 }); // 不穏な高め
+      // 闇：ブラックホールが敵を吸い込み続ける → 吸い込む上昇ドローン＋逆向きに渦巻く下降（持続）
+      case "dark":
+        tone({ freq: 100, freqTo: 155, dur: 1.15, type: "sine", gain: 0.19, attack: 0.22 }); // 吸い込む上昇
+        tone({ freq: 340, freqTo: 90, dur: 1.0, type: "sine", gain: 0.08, attack: 0.25 }); // 逆向きの渦（下降）
+        tone({ freq: 175, dur: 1.05, type: "sine", gain: 0.07, attack: 0.35 }); // 不穏な持続
         break;
-      case "light": // シャァァンと明るい和音が開き、上でキラリと伸びる
-        [784, 988, 1175].forEach((f, i) =>
-          tone({ freq: f, dur: 0.85, type: "sine", gain: 0.1, delay: i * 0.04, attack: 0.05 }),
-        ); // 開くメジャー和音
-        [1568, 1976].forEach((f, i) =>
-          tone({ freq: f, dur: 0.5, type: "sine", gain: 0.06, delay: 0.12 + i * 0.08, attack: 0.06 }),
-        ); // 上のきらめき
+      // 光：全方位レーザーが一瞬パッと放たれる → 短く鋭い放射状フラッシュ
+      case "light":
+        [1046, 1568, 2093].forEach((f, i) =>
+          tone({ freq: f, dur: 0.22, type: "sine", gain: 0.1, delay: i * 0.012 }),
+        ); // 一気に開く閃光
+        tone({ freq: 784, dur: 0.16, type: "sine", gain: 0.08 }); // 芯
         break;
-      case "wind": // フュゥゥと渦巻く：抜ける上昇＋巻き戻る下降＋ゆらぐ空気
-        tone({ freq: 380, freqTo: 1150, dur: 0.45, type: "sine", gain: 0.12, attack: 0.05 });
-        tone({ freq: 980, freqTo: 340, dur: 0.4, type: "sine", gain: 0.08, delay: 0.14 });
-        tone({ freq: 560, freqTo: 820, dur: 0.35, type: "sine", gain: 0.06, delay: 0.28 }); // 余韻の渦
+      // 風：竜巻がうろついて敵を弾く → 巻き上げ↔巻き戻しで渦巻く（やや持続）
+      case "wind":
+        tone({ freq: 380, freqTo: 1050, dur: 0.34, type: "sine", gain: 0.11, attack: 0.05 }); // 巻き上げ
+        tone({ freq: 950, freqTo: 400, dur: 0.34, type: "sine", gain: 0.08, delay: 0.18 }); // 巻き戻し
+        tone({ freq: 560, freqTo: 780, dur: 0.4, type: "sine", gain: 0.06, delay: 0.34, attack: 0.1 }); // 渦の持続
         break;
       default:
         tone({ freq: 660, dur: 0.14, type: "sine", gain: 0.12 });
