@@ -360,6 +360,7 @@ export default function SurvivalMode({
           w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED, dmg: weapon.damage, el, life: 2.2, hit: new Set<Enemy>() });
         }
         burst(w, w.player.x, w.player.y, el, 4, 80);
+        sfx.playAttack(el); // 属性ごとの発射音
         w.fireAt[weapon.id] = FIRE_INTERVAL[el] ?? 0.7;
       }
 

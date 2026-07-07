@@ -101,6 +101,58 @@ export const sfx = {
     // 終盤に C5 を薄く重ねて幻想的な空気感（きらめかせず持続で）
     tone({ freq: 523, dur: 0.65, type: "sine", gain: 0.08, attack: 0.4, delay: 0.36 });
   },
+  // 属性攻撃の発射音（属性ごとに音色を変える）。自動連射なので短く控えめ＋属性別throttle。
+  // 幻想系パレット（サイン/三角）に統一。
+  playAttack(el: string) {
+    if (!throttled("atk-" + el, 100)) return;
+    switch (el) {
+      // 火：「ボウっ」（着火の一撃）＋「メラメラ」（揺らぐ炎が連続）
+      case "fire":
+        tone({ freq: 260, freqTo: 105, dur: 0.2, type: "triangle", gain: 0.19, attack: 0.004 }); // ボウっ
+        [300, 260, 350, 280, 360, 290, 330].forEach((f, i) =>
+          tone({ freq: f, dur: 0.11, type: "triangle", gain: 0.07, delay: 0.1 + i * 0.09 }),
+        ); // メラメラ（上下に揺らぐ炎）
+        break;
+      // 氷：「ヒュオー」（落下の下降ホイッスル）＋「シャッキーん」（着弾の鋭い煌めき）
+      case "ice":
+        tone({ freq: 1600, freqTo: 460, dur: 0.34, type: "sine", gain: 0.13 }); // ヒュオー
+        tone({ freq: 3136, dur: 0.1, type: "sine", gain: 0.09, delay: 0.32, attack: 0.002 }); // シャッ（鋭い頭）
+        [2637, 2093].forEach((f, i) =>
+          tone({ freq: f, dur: 0.32, type: "sine", gain: 0.09, delay: 0.33 + i * 0.02, attack: 0.003 }),
+        ); // キーンと伸びる余韻
+        break;
+      // 雷：「ゴロゴロ」（低い轟き）＋「ピッシャー」（鋭い一撃→連鎖）
+      case "thunder":
+        [80, 66, 88, 70].forEach((f, i) =>
+          tone({ freq: f, dur: 0.13, type: "triangle", gain: 0.11, delay: i * 0.08 }),
+        ); // ゴロゴロ（低く転がる轟き）
+        tone({ freq: 2100, freqTo: 300, dur: 0.11, type: "triangle", gain: 0.18, delay: 0.14 }); // ピッシャー
+        [1400, 1000].forEach((f, i) =>
+          tone({ freq: f, freqTo: f * 0.4, dur: 0.05, type: "triangle", gain: 0.1, delay: 0.2 + i * 0.05 }),
+        ); // 連鎖の弾け
+        break;
+      // 闇：ブラックホールが敵を吸い込み続ける → 吸い込む上昇ドローン＋逆向きに渦巻く下降（持続）
+      // ※イメージ未確定のため現状維持
+      case "dark":
+        tone({ freq: 100, freqTo: 155, dur: 1.15, type: "sine", gain: 0.19, attack: 0.22 }); // 吸い込む上昇
+        tone({ freq: 340, freqTo: 90, dur: 1.0, type: "sine", gain: 0.08, attack: 0.25 }); // 逆向きの渦（下降）
+        tone({ freq: 175, dur: 1.05, type: "sine", gain: 0.07, attack: 0.35 }); // 不穏な持続
+        break;
+      // 光：「チューン」（レーザーが高→低へシュッと下降）
+      case "light":
+        tone({ freq: 2300, freqTo: 480, dur: 0.24, type: "sine", gain: 0.14 }); // チューン
+        tone({ freq: 1760, freqTo: 620, dur: 0.2, type: "sine", gain: 0.08, delay: 0.02 }); // 厚み
+        break;
+      // 風：「ごーーうう」（低めの風がうねって唸る・持続）
+      case "wind":
+        tone({ freq: 200, freqTo: 300, dur: 0.6, type: "sine", gain: 0.14, attack: 0.14 }); // 唸り上がり
+        tone({ freq: 300, freqTo: 210, dur: 0.55, type: "sine", gain: 0.09, delay: 0.16, attack: 0.1 }); // うねり
+        tone({ freq: 150, dur: 0.62, type: "sine", gain: 0.07, attack: 0.16 }); // 低い下支え
+        break;
+      default:
+        tone({ freq: 660, dur: 0.14, type: "sine", gain: 0.12 });
+    }
+  },
   // 命中（軽い高音チック・throttleで鳴りすぎ防止）。サインで清潔感、詠唱系と同じ調性(G5)。
   playHit() {
     if (!throttled("hit", 55)) return;
