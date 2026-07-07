@@ -599,17 +599,55 @@ export default function SurvivalMode({
 
       if (w.flash > 0.01) { ctx.globalAlpha = w.flash * 0.5; ctx.fillStyle = PALETTE[w.flashEl][1]; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
 
-      // HUD
-      ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(10, 10, 150, 12);
-      ctx.fillStyle = "#5ce08a"; ctx.fillRect(10, 10, 150 * Math.max(0, p.hp / p.maxHp), 12);
-      ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 1; ctx.strokeRect(10, 10, 150, 12);
+      // ===== HUD =====
+      // 上部パネル
+      ctx.fillStyle = "rgba(10,6,20,0.45)"; ctx.fillRect(0, 0, W, 40);
+
+      // HPバー（❤＋数値・低HPで点滅）
+      const hpPct = Math.max(0, p.hp / p.maxHp);
+      const lowHp = hpPct <= 0.3;
+      const barX = 26, barW = 118, barY = 12, barH = 10;
+      ctx.textAlign = "left"; ctx.font = "13px monospace"; ctx.fillStyle = "#ff6b8a";
+      ctx.fillText("❤", 8, 22);
+      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillRect(barX, barY, barW, barH);
+      const hpCol = lowHp ? "#ff4d4d" : hpPct < 0.6 ? "#ffd54f" : "#5ce08a";
+      ctx.globalAlpha = lowHp ? 0.55 + 0.45 * Math.sin(w.elapsed * 9) : 1;
+      ctx.fillStyle = hpCol; ctx.fillRect(barX, barY, barW * hpPct, barH);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.lineWidth = 1; ctx.strokeRect(barX, barY, barW, barH);
+      ctx.fillStyle = "#fff"; ctx.font = "10px monospace"; ctx.fillText(`${Math.ceil(Math.max(0, p.hp))}`, barX + barW + 5, 21);
+
+      // 中央大タイマー（残り5秒で赤点滅）
       const leftT = Math.max(0, Math.ceil(durRef.current - w.elapsed));
-      ctx.fillStyle = "#fff"; ctx.font = "bold 20px monospace"; ctx.textAlign = "center";
-      ctx.fillText(`${leftT}`, W / 2, 26);
-      ctx.font = "12px monospace"; ctx.textAlign = "right";
-      ctx.fillStyle = "#ffd54f"; ctx.fillText(`Lv ${weaponsRef.current.length}`, W - 10, 16);
-      ctx.fillStyle = "#eee"; ctx.fillText(`${w.kills} kills`, W - 10, 30);
-      if (debugRef.current) { ctx.textAlign = "left"; ctx.fillStyle = "#5ce08a"; ctx.fillText("DEBUG (無敵)", 10, 44); }
+      const danger = leftT <= 5;
+      ctx.textAlign = "center"; ctx.font = "bold 26px monospace";
+      ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 4;
+      ctx.fillStyle = danger ? `rgba(255,80,80,${0.6 + 0.4 * Math.sin(w.elapsed * 11)})` : "#fff";
+      ctx.fillText(`${leftT}`, W / 2, 30);
+      ctx.shadowBlur = 0;
+
+      // レベル / kill（右上）
+      ctx.textAlign = "right";
+      ctx.font = "bold 13px monospace"; ctx.fillStyle = "#ffd54f"; ctx.fillText(`Lv ${weaponsRef.current.length}`, W - 8, 17);
+      ctx.font = "11px monospace"; ctx.fillStyle = "#eee"; ctx.fillText(`${w.kills} kills`, W - 8, 31);
+
+      // 装備魔法アイコン列（下部）
+      const ws = weaponsRef.current;
+      if (ws.length) {
+        const isz = 18, gap = 6, totalW = ws.length * isz + (ws.length - 1) * gap;
+        let ix = (W - totalW) / 2; const iy = H - 24;
+        ctx.fillStyle = "rgba(10,6,20,0.5)"; ctx.fillRect(0, H - 30, W, 30);
+        for (const wp of ws) {
+          ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(ix, iy, isz, isz);
+          ctx.fillStyle = wp.color; ctx.fillRect(ix + 3, iy + 3, isz - 6, isz - 6);
+          ctx.strokeStyle = wp.color; ctx.lineWidth = 1; ctx.strokeRect(ix + 0.5, iy + 0.5, isz - 1, isz - 1);
+          ctx.fillStyle = "#fff"; ctx.font = "8px monospace"; ctx.textAlign = "left";
+          ctx.fillText(`${wp.level}`, ix + 1, iy + 8);
+          ix += isz + gap;
+        }
+      }
+
+      if (debugRef.current) { ctx.textAlign = "left"; ctx.font = "11px monospace"; ctx.fillStyle = "#5ce08a"; ctx.fillText("DEBUG (無敵)", 8, 52); }
 
       if (pausedRef.current) { ctx.fillStyle = "rgba(10,6,20,0.55)"; ctx.fillRect(0, 0, W, H); }
     };
