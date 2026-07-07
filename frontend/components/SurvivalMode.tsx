@@ -45,7 +45,7 @@ const PALETTE: Record<Elem, string[]> = {
   wind: ["#eafff0", "#a6f0c0", "#5ad98a", "#2fa866"],
 };
 const FIRE_INTERVAL: Record<Elem, number> = {
-  fire: 0.5, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
+  fire: 0.25, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
 };
 
 // 炎ドット絵（プレイヤーから立ち昇る）。R=赤 O=橙 Y=黄 W=芯
