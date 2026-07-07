@@ -1,12 +1,13 @@
 "use client";
 
 // 第2部：ヴァンサバモード（Canvas + requestAnimationFrame ・ドット絵演出）。
-// 詠唱で鍛造した武器(=魔法)で、湧く敵を自動攻撃しながら durationSec 秒サバイブ。
-// ★ ラウンド制：durationSec 秒生存でクリア → onLevelUp（詠唱パートで新呪文→新武器追加）
-//    → 次ラウンド（敵強化・HP全回復）。MAX_LEVEL 制覇で victory、HP0 で defeat。
-// ★ 属性ごとに攻撃の挙動が違う：
-//    炎=火柱 / 氷=落下氷塊(範囲) / 雷=貫通弾+稲妻 / 闇=ブラックホール(吸込+継続) / 光=全方位レーザー / 風=貫通弾
-// 操作: ドラッグ/タッチした方向へ移動（PCは矢印/WASDも可）。攻撃は自動。
+// ラウンド制：durationSec 秒生存でクリア → onLevelUp（詠唱で新呪文→新武器）→ 次ラウンド(敵強化・全回復)。
+// MAX_LEVEL 制覇で victory、HP0 で defeat。
+// 属性ごとに攻撃の挙動が違う：
+//   炎=自機から立ち昇るピクセル炎アウラ(周囲へ持続ダメージ) / 氷=高速落下する氷塊(広範囲着弾)
+//   雷=最寄りから連鎖する即着弾の電撃(弾なし) / 闇=ブラックホール(吸込+継続) / 光=全方位レーザー
+//   風=竜巻(敵をノックバック+軽ダメージ)
+// 操作: ドラッグ/タッチで移動（PCは矢印/WASDも可）。攻撃は自動。
 
 import { useEffect, useRef } from "react";
 import type { Weapon } from "@/lib/useGame";
@@ -18,7 +19,6 @@ export interface SurvivalModeProps {
   paused: boolean;
   onLevelUp: (nextLevel: number) => void;
   onFinish: (outcome: "victory" | "defeat") => void;
-  /** デバッグ：無敵・レベルUP/敗北なし（エフェクト観察用）。 */
   debug?: boolean;
 }
 
@@ -44,19 +44,37 @@ const PALETTE: Record<Elem, string[]> = {
   light: ["#ffffff", "#fff3b0", "#ffe066", "#f2c94c"],
   wind: ["#eafff0", "#a6f0c0", "#5ad98a", "#2fa866"],
 };
-// 属性ごとの発射間隔（秒）
 const FIRE_INTERVAL: Record<Elem, number> = {
-  fire: 0.8, ice: 0.85, thunder: 0.6, dark: 1.5, light: 1.1, wind: 0.55,
+  fire: 0.3, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
 };
+
+// 炎ドット絵（プレイヤーから立ち昇る）。R=赤 O=橙 Y=黄 W=芯
+const FLAME_COL: Record<string, string> = { R: "#e01e0a", O: "#ff8c1a", Y: "#ffd21e", W: "#fff2a0" };
+const FLAME = [
+  "....R....",
+  "...RR....",
+  "..R.RR...",
+  "..RRRR...",
+  ".RRROOR..",
+  ".RROOOR..",
+  "RROOOOOR.",
+  "ROOOYOOR.",
+  "ROOYYYOR.",
+  "ROYYYYYOR",
+  "ROYYWYYOR",
+  ".ROYYYOR.",
+  ".RROOORR.",
+  "..RRRRR..",
+];
 
 interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; }
 interface Shot { x: number; y: number; vx: number; vy: number; dmg: number; el: Elem; life: number; hit: Set<Enemy>; }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number; }
 interface Bolt { pts: { x: number; y: number }[]; life: number; max: number; color: string; }
-interface Pillar { x: number; life: number; max: number; dmg: number; hit: Set<Enemy>; } // 炎の火柱
-interface IceFall { x: number; y: number; vy: number; targetY: number; dmg: number; done: boolean; } // 落下氷塊
-interface Hole { x: number; y: number; life: number; max: number; dmg: number; r: number; } // ブラックホール
-interface Beam { x: number; y: number; angle: number; life: number; max: number; dmg: number; hit: Set<Enemy>; } // 全方位レーザー
+interface IceFall { x: number; y: number; vy: number; targetY: number; dmg: number; done: boolean; }
+interface Hole { x: number; y: number; life: number; max: number; dmg: number; r: number; }
+interface Beam { x: number; y: number; angle: number; life: number; max: number; dmg: number; hit: Set<Enemy>; }
+interface Tornado { x: number; y: number; life: number; max: number; dmg: number; r: number; }
 
 interface World {
   player: { x: number; y: number; hp: number; maxHp: number; r: number };
@@ -64,10 +82,10 @@ interface World {
   shots: Shot[];
   particles: Particle[];
   bolts: Bolt[];
-  pillars: Pillar[];
   iceFalls: IceFall[];
   holes: Hole[];
   beams: Beam[];
+  tornados: Tornado[];
   kills: number;
   elapsed: number;
   spawnTimer: number;
@@ -105,13 +123,12 @@ export default function SurvivalMode({
   useEffect(() => { onLevelUpRef.current = onLevelUp; }, [onLevelUp]);
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
 
-  // 新武器追加＝レベルUP完了 → 次ラウンド開始（リセット・全回復・フラッシュ）
   useEffect(() => {
     if (weapons.length > prevWeaponCount.current) {
       const w = worldRef.current;
       if (w) {
         w.elapsed = 0;
-        w.enemies = []; w.shots = []; w.pillars = []; w.iceFalls = []; w.holes = []; w.beams = [];
+        w.enemies = []; w.shots = []; w.iceFalls = []; w.holes = []; w.beams = []; w.tornados = [];
         w.spawnTimer = 0;
         w.awaitingLevel = false;
         w.player.hp = w.player.maxHp;
@@ -129,7 +146,7 @@ export default function SurvivalMode({
   useEffect(() => {
     worldRef.current = {
       player: { x: W / 2, y: H / 2, hp: 100, maxHp: 100, r: 12 },
-      enemies: [], shots: [], particles: [], bolts: [], pillars: [], iceFalls: [], holes: [], beams: [],
+      enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [],
       kills: 0, elapsed: 0, spawnTimer: 0, fireAt: {},
       awaitingLevel: false, shake: 0, flash: 1, flashEl: toElem(weapons[0]?.spell_type),
       finished: false,
@@ -196,7 +213,7 @@ export default function SurvivalMode({
           color: pal[1 + Math.floor(Math.random() * 3)], size: 2 + Math.floor(Math.random() * 3),
         });
       }
-      if (w.particles.length > 360) w.particles.splice(0, w.particles.length - 360);
+      if (w.particles.length > 380) w.particles.splice(0, w.particles.length - 380);
     };
 
     const makeBolt = (w: World, x1: number, y1: number, x2: number, y2: number, color: string) => {
@@ -212,7 +229,6 @@ export default function SurvivalMode({
       w.bolts.push({ pts, life: 0.14, max: 0.14, color });
     };
 
-    // 敵にダメージ（撃破時に kill 加算・バースト・シェイク）。全攻撃で共用。
     const hitEnemy = (w: World, e: Enemy, dmg: number, el: Elem) => {
       if (e.hp <= 0) return;
       e.hp -= dmg;
@@ -267,9 +283,29 @@ export default function SurvivalMode({
         if (d < e.r + w.player.r) { if (!debugRef.current) w.player.hp -= 22 * dt; w.shake = Math.min(8, w.shake + 16 * dt); }
       }
 
+      // 炎アウラ（自機周囲に持続ダメージ）: 炎属性武器の合計ダメージで
+      let fireDps = 0;
+      for (const weapon of weaponsRef.current) if (toElem(weapon.spell_type) === "fire") fireDps += weapon.damage;
+      if (fireDps > 0) {
+        const R = 46;
+        for (const e of w.enemies) {
+          if (e.hp <= 0) continue;
+          if (Math.hypot(e.x - w.player.x, e.y - w.player.y) < R + e.r) {
+            e.hp -= fireDps * dt * 2.2;
+            if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "fire", 18, 200); w.shake = Math.min(8, w.shake + 3); }
+          }
+        }
+        if (Math.random() < 0.95) {
+          const a = Math.random() * Math.PI * 2, rr = R * (0.3 + Math.random() * 0.7);
+          w.particles.push({ x: w.player.x + Math.cos(a) * rr, y: w.player.y + Math.sin(a) * rr, vx: (Math.random() - 0.5) * 24, vy: -40 - Math.random() * 50, life: 0.4, max: 0.7, color: PALETTE.fire[1 + Math.floor(Math.random() * 3)], size: 2 + Math.floor(Math.random() * 3) });
+        }
+      }
+
       // 自動攻撃（属性ごとに挙動が違う）
       const SHOT_SPEED = 330;
       for (const weapon of weaponsRef.current) {
+        const el = toElem(weapon.spell_type);
+        if (el === "fire") continue; // 炎は上のアウラで常時処理
         w.fireAt[weapon.id] = (w.fireAt[weapon.id] ?? 0) - dt;
         if (w.fireAt[weapon.id] > 0) continue;
         let best: Enemy | null = null, bestD = Infinity;
@@ -278,70 +314,68 @@ export default function SurvivalMode({
           if (d < bestD) { bestD = d; best = e; }
         }
         if (!best) continue;
-        const el = toElem(weapon.spell_type);
 
-        if (el === "fire") {
-          // 火柱：敵の位置に縦の炎
-          w.pillars.push({ x: best.x, life: 0.55, max: 0.55, dmg: weapon.damage, hit: new Set<Enemy>() });
-        } else if (el === "ice") {
-          // 落下氷塊：最寄り最大2体の頭上から落とす
+        if (el === "ice") {
+          // 高速落下する氷塊：最寄り最大2体の頭上から
           const targets = [...w.enemies]
             .sort((p, q) => Math.hypot(p.x - w.player.x, p.y - w.player.y) - Math.hypot(q.x - w.player.x, q.y - w.player.y))
             .slice(0, 2);
-          for (const t of targets) w.iceFalls.push({ x: t.x, y: -20, vy: 430, targetY: t.y, dmg: weapon.damage, done: false });
+          for (const t of targets) w.iceFalls.push({ x: t.x, y: -20, vy: 1150, targetY: t.y, dmg: weapon.damage, done: false });
+        } else if (el === "thunder") {
+          // 弾なしの即着弾・連鎖電撃（最寄りから最大3体）
+          let cur = { x: w.player.x, y: w.player.y };
+          const used = new Set<Enemy>();
+          for (let i = 0; i < 3; i++) {
+            let n: Enemy | null = null, nd = Infinity;
+            for (const e of w.enemies) {
+              if (e.hp <= 0 || used.has(e)) continue;
+              const d = Math.hypot(e.x - cur.x, e.y - cur.y);
+              if (d < nd) { nd = d; n = e; }
+            }
+            if (!n) break;
+            makeBolt(w, cur.x, cur.y, n.x, n.y, PALETTE.thunder[0]);
+            hitEnemy(w, n, weapon.damage, "thunder");
+            used.add(n); cur = n;
+          }
+          w.shake = Math.min(8, w.shake + 2);
         } else if (el === "dark") {
-          // ブラックホール：敵位置に発生、吸い込み＋継続ダメージ
           w.holes.push({ x: best.x, y: best.y, life: 1.4, max: 1.4, dmg: weapon.damage, r: 74 });
         } else if (el === "light") {
-          // 全方位レーザー：プレイヤーから放射状
           const base = Math.random() * Math.PI;
           const N = 10;
           for (let i = 0; i < N; i++) w.beams.push({ x: w.player.x, y: w.player.y, angle: base + (i / N) * Math.PI * 2, life: 0.18, max: 0.18, dmg: weapon.damage, hit: new Set<Enemy>() });
+        } else if (el === "wind") {
+          // 竜巻：敵位置に発生、ノックバック＋軽ダメージ
+          w.tornados.push({ x: best.x, y: best.y, life: 0.9, max: 0.9, dmg: weapon.damage, r: 62 });
         } else {
-          // thunder / wind：貫通弾（thunder は着弾で稲妻）
           const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
           w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED, dmg: weapon.damage, el, life: 2.2, hit: new Set<Enemy>() });
         }
-        burst(w, w.player.x, w.player.y, el, 4, 80); // マズル
+        burst(w, w.player.x, w.player.y, el, 4, 80);
         w.fireAt[weapon.id] = FIRE_INTERVAL[el] ?? 0.7;
       }
 
-      // 貫通弾の移動＆命中
+      // 貫通弾（フォールバック用）
       for (const s of w.shots) {
         s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
         for (const e of w.enemies) {
           if (e.hp <= 0 || s.hit.has(e)) continue;
-          if (Math.hypot(e.x - s.x, e.y - s.y) < e.r + 4) {
-            s.hit.add(e);
-            if (s.el === "thunder") makeBolt(w, w.player.x, w.player.y, e.x, e.y, PALETTE.thunder[0]);
-            hitEnemy(w, e, s.dmg, s.el);
-          }
+          if (Math.hypot(e.x - s.x, e.y - s.y) < e.r + 4) { s.hit.add(e); hitEnemy(w, e, s.dmg, s.el); }
         }
       }
       w.shots = w.shots.filter((s) => s.life > 0 && s.x > -20 && s.x < W + 20 && s.y > -20 && s.y < H + 20);
 
-      // 火柱：縦の帯にいる敵へダメージ＋立ち昇る炎
-      for (const pl of w.pillars) {
-        pl.life -= dt;
-        for (const e of w.enemies) {
-          if (e.hp <= 0 || pl.hit.has(e)) continue;
-          if (Math.abs(e.x - pl.x) < 17) { pl.hit.add(e); hitEnemy(w, e, pl.dmg, "fire"); }
-        }
-        for (let k = 0; k < 3; k++) burst(w, pl.x + (Math.random() - 0.5) * 26, Math.random() * H, "fire", 1, 30);
-      }
-      w.pillars = w.pillars.filter((p) => p.life > 0);
-
-      // 落下氷塊：着弾で範囲ダメージ
+      // 落下氷塊：着弾で広範囲ダメージ
       for (const ic of w.iceFalls) {
         ic.y += ic.vy * dt;
         if (!ic.done && ic.y >= ic.targetY) {
           ic.done = true;
-          for (const e of w.enemies) if (Math.hypot(e.x - ic.x, e.y - ic.targetY) < 30) hitEnemy(w, e, ic.dmg, "ice");
-          burst(w, ic.x, ic.targetY, "ice", 16, 190);
-          w.shake = Math.min(8, w.shake + 2);
+          for (const e of w.enemies) if (Math.hypot(e.x - ic.x, e.y - ic.targetY) < 52) hitEnemy(w, e, ic.dmg, "ice");
+          burst(w, ic.x, ic.targetY, "ice", 22, 240);
+          w.shake = Math.min(8, w.shake + 3);
         }
       }
-      w.iceFalls = w.iceFalls.filter((ic) => !ic.done);
+      w.iceFalls = w.iceFalls.filter((ic) => !ic.done && ic.y < H + 40);
 
       // ブラックホール：吸い込み＋継続ダメージ
       for (const ho of w.holes) {
@@ -351,20 +385,19 @@ export default function SurvivalMode({
           const hx = ho.x - e.x, hy = ho.y - e.y;
           const d = Math.hypot(hx, hy) || 1;
           if (d < ho.r) {
-            e.x += (hx / d) * 150 * dt; e.y += (hy / d) * 150 * dt; // 吸い込み
+            e.x += (hx / d) * 150 * dt; e.y += (hy / d) * 150 * dt;
             if (d < ho.r * 0.6) {
-              e.hp -= ho.dmg * dt * 2.5; // 継続ダメージ
+              e.hp -= ho.dmg * dt * 2.5;
               if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "dark", 18, 200); w.shake = Math.min(8, w.shake + 3); }
             }
           }
         }
-        // 渦の粒
         const a = Math.random() * Math.PI * 2, rr = ho.r * (0.4 + Math.random() * 0.6);
         w.particles.push({ x: ho.x + Math.cos(a) * rr, y: ho.y + Math.sin(a) * rr, vx: -Math.cos(a) * 90, vy: -Math.sin(a) * 90, life: 0.4, max: 0.7, color: PALETTE.dark[1], size: 2 + Math.random() * 2 });
       }
       w.holes = w.holes.filter((h) => h.life > 0);
 
-      // 全方位レーザー：直線上の敵へダメージ（1本1敵1回）
+      // 全方位レーザー
       for (const bm of w.beams) {
         bm.life -= dt;
         const dxu = Math.cos(bm.angle), dyu = Math.sin(bm.angle);
@@ -378,16 +411,50 @@ export default function SurvivalMode({
       }
       w.beams = w.beams.filter((b) => b.life > 0);
 
-      // 死亡敵の除去（全ダメージ源の後で一括）
+      // 竜巻：範囲内の敵を外向きにノックバック＋軽い継続ダメージ
+      for (const to of w.tornados) {
+        to.life -= dt;
+        for (const e of w.enemies) {
+          if (e.hp <= 0) continue;
+          const tx = e.x - to.x, ty = e.y - to.y;
+          const d = Math.hypot(tx, ty) || 1;
+          if (d < to.r) {
+            e.x += (tx / d) * 220 * dt; e.y += (ty / d) * 220 * dt; // 外向きノックバック
+            e.hp -= to.dmg * dt * 1.2;
+            if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "wind", 16, 190); w.shake = Math.min(8, w.shake + 2); }
+          }
+        }
+      }
+      w.tornados = w.tornados.filter((t) => t.life > 0);
+
+      // 死亡敵の一括除去
       w.enemies = w.enemies.filter((e) => e.hp > 0);
 
-      // パーティクル/稲妻/シェイク/フラッシュ 更新
+      // 更新
       for (const pt of w.particles) { pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vx *= 0.9; pt.vy *= 0.9; pt.life -= dt; }
       w.particles = w.particles.filter((p) => p.life > 0);
       for (const b of w.bolts) b.life -= dt;
       w.bolts = w.bolts.filter((b) => b.life > 0);
       w.shake = Math.max(0, w.shake - 26 * dt);
       w.flash = Math.max(0, w.flash - 2 * dt);
+    };
+
+    // プレイヤーから立ち昇る炎ドット絵
+    const drawFlame = (cx: number, cy: number) => {
+      const cs = 2.7;
+      const cols = FLAME[0].length, rows = FLAME.length;
+      const ox = cx - (cols * cs) / 2;
+      const oy = cy - rows * cs + 12;
+      const bob = (Math.random() - 0.5) * 2;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const ch = FLAME[r][c];
+          if (ch === ".") continue;
+          if (r < 4 && Math.random() < 0.45) continue; // 上部はちらつく
+          ctx.fillStyle = FLAME_COL[ch];
+          ctx.fillRect(Math.round(ox + c * cs + bob), Math.round(oy + r * cs), Math.ceil(cs), Math.ceil(cs));
+        }
+      }
     };
 
     const draw = (ctx: CanvasRenderingContext2D, w: World) => {
@@ -397,12 +464,11 @@ export default function SurvivalMode({
       ctx.save();
       if (w.shake > 0.1) ctx.translate((Math.random() - 0.5) * w.shake, (Math.random() - 0.5) * w.shake);
 
-      // グリッド
       ctx.strokeStyle = "rgba(160,107,255,0.07)"; ctx.lineWidth = 1;
       for (let gx = 0; gx <= W; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
       for (let gy = 0; gy <= H; gy += 40) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
 
-      // ブラックホール（暗い核＝通常合成で先に）
+      // ブラックホール（暗い核）
       for (const ho of w.holes) {
         const a = ho.life / ho.max;
         ctx.globalAlpha = a;
@@ -411,7 +477,7 @@ export default function SurvivalMode({
         ctx.globalAlpha = 1;
       }
 
-      // 敵（ドット）
+      // 敵
       for (const e of w.enemies) {
         px(e.x, e.y, e.r * 2, "#8a1810");
         px(e.x, e.y, e.r * 1.5, "#c8341a");
@@ -423,7 +489,7 @@ export default function SurvivalMode({
         }
       }
 
-      // プレイヤー（ドット魔導士）
+      // プレイヤー
       const p = w.player;
       px(p.x, p.y + 2, 20, "#4a1f8a");
       px(p.x, p.y, 16, "#a06bff");
@@ -432,18 +498,12 @@ export default function SurvivalMode({
       px(p.x - 4, p.y - 1, 3, "#fff");
       px(p.x + 4, p.y - 1, 3, "#fff");
 
-      // ===== 光り物は加算合成で派手に =====
+      // 炎アウラのドット絵（炎属性を持っていれば）
+      if (weaponsRef.current.some((wp) => toElem(wp.spell_type) === "fire")) drawFlame(p.x, p.y);
+
+      // ===== 光り物：加算合成 =====
       ctx.globalCompositeOperation = "lighter";
 
-      // 火柱
-      for (const pl of w.pillars) {
-        const a = pl.life / pl.max;
-        ctx.globalAlpha = 0.45 * a; ctx.fillStyle = PALETTE.fire[2]; ctx.fillRect(Math.round(pl.x - 16), 0, 32, H);
-        ctx.globalAlpha = 0.7 * a; ctx.fillStyle = PALETTE.fire[1]; ctx.fillRect(Math.round(pl.x - 8), 0, 16, H);
-        ctx.globalAlpha = 1;
-      }
-
-      // 全方位レーザー
       for (const bm of w.beams) {
         ctx.globalAlpha = bm.life / bm.max;
         ctx.strokeStyle = PALETTE.light[0]; ctx.lineWidth = 3; ctx.shadowColor = PALETTE.light[1]; ctx.shadowBlur = 12;
@@ -451,12 +511,21 @@ export default function SurvivalMode({
         ctx.shadowBlur = 0; ctx.globalAlpha = 1;
       }
 
-      // 落下氷塊
-      for (const ic of w.iceFalls) {
-        px(ic.x, ic.y, 12, PALETTE.ice[2]); px(ic.x, ic.y, 8, PALETTE.ice[1]); px(ic.x, ic.y, 4, PALETTE.ice[0]);
+      for (const ic of w.iceFalls) { px(ic.x, ic.y, 12, PALETTE.ice[2]); px(ic.x, ic.y, 8, PALETTE.ice[1]); px(ic.x, ic.y, 4, PALETTE.ice[0]); }
+
+      // 竜巻（回転するドット）
+      for (const to of w.tornados) {
+        const a = to.life / to.max;
+        const spin = (to.max - to.life) * 16;
+        ctx.globalAlpha = a;
+        for (let k = 0; k < 9; k++) {
+          const ang = spin + (k / 9) * Math.PI * 2;
+          const rad = to.r * (0.25 + (k % 3) * 0.28);
+          px(to.x + Math.cos(ang) * rad, to.y + Math.sin(ang) * rad, 5, PALETTE.wind[1 + (k % 3)]);
+        }
+        ctx.globalAlpha = 1;
       }
 
-      // 稲妻
       for (const b of w.bolts) {
         ctx.globalAlpha = b.life / b.max;
         ctx.strokeStyle = b.color; ctx.lineWidth = 2.5; ctx.shadowColor = b.color; ctx.shadowBlur = 12;
@@ -465,27 +534,19 @@ export default function SurvivalMode({
         ctx.stroke(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
       }
 
-      // 貫通弾（thunder/wind）
       for (const s of w.shots) {
         const pal = PALETTE[s.el];
         ctx.shadowColor = pal[2]; ctx.shadowBlur = 10;
-        if (s.el === "thunder") {
-          px(s.x, s.y, 5, pal[2]); px(s.x, s.y, 3, pal[0]);
-          px(s.x + (Math.random() - 0.5) * 6, s.y + (Math.random() - 0.5) * 6, 2, pal[1]);
-        } else {
-          px(s.x, s.y, 5, pal[2]); px(s.x, s.y, 3, pal[0]);
-        }
+        px(s.x, s.y, 5, pal[2]); px(s.x, s.y, 3, pal[0]);
         ctx.shadowBlur = 0;
       }
 
-      // パーティクル
       for (const pt of w.particles) { ctx.globalAlpha = Math.max(0, pt.life / pt.max); px(pt.x, pt.y, pt.size, pt.color); }
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
 
       ctx.restore();
 
-      // ラウンド開始フラッシュ
       if (w.flash > 0.01) { ctx.globalAlpha = w.flash * 0.5; ctx.fillStyle = PALETTE[w.flashEl][1]; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
 
       // HUD
