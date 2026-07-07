@@ -27,12 +27,14 @@ const ELEM_JA: Record<string, string> = { fire: "炎", ice: "氷", thunder: "雷
 const DEBUG_CODE = "wwssadadab"; // タイトル画面でこれを打つとデバッグへ
 
 export default function Home() {
-  const { state, start, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC } =
+  const { state, start, beginRecord, cast, castText, enterSurvival, levelUp, finish, reset, SURVIVE_SEC } =
     useGame();
   const [micError, setMicError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
   const [dbgElem, setDbgElem] = useState<string>("fire"); // "all" or 単体属性
   const [muted, setMuted] = useState(false); // SE ミュート（初期値は localStorage から同期）
+  const [textMode, setTextMode] = useState(false); // #23 テキスト入力バックアップ
+  const [spellInput, setSpellInput] = useState("");
 
   useEffect(() => {
     setMuted(sfx.isMuted());
@@ -144,8 +146,48 @@ export default function Home() {
                 sfx.playCast();
                 cast(blob);
               }}
-              onError={setMicError}
+              onError={(m) => {
+                setMicError(m);
+                setTextMode(true); // マイク不可なら自動でテキスト入力へ誘導
+              }}
             />
+          </div>
+
+          {/* #23 テキスト入力バックアップ：マイクが使えない審査員向けの保険 */}
+          <div style={{ marginTop: 10 }}>
+            {!textMode ? (
+              <button style={textLink} onClick={() => setTextMode(true)}>
+                ⌨️ 声が使えない場合はこちら（テキストで詠唱）
+              </button>
+            ) : (
+              <form
+                style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!spellInput.trim()) return;
+                  sfx.playCast();
+                  castText(spellInput);
+                  setSpellInput("");
+                }}
+              >
+                <input
+                  style={textInput}
+                  value={spellInput}
+                  onChange={(e) => setSpellInput(e.target.value)}
+                  placeholder="呪文を入力して詠唱"
+                  aria-label="呪文をテキストで入力"
+                  autoFocus
+                />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="submit" style={btn} disabled={!spellInput.trim()}>
+                    ▶ テキストで詠唱
+                  </button>
+                  <button type="button" style={textLink} onClick={() => setTextMode(false)}>
+                    🎤 マイクに戻す
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -263,6 +305,29 @@ const muteBtn: CSSProperties = {
   border: "2px solid var(--accent)",
   borderRadius: 8,
   cursor: "pointer",
+};
+
+const textLink: CSSProperties = {
+  fontFamily: "var(--pixel-font)",
+  fontSize: 12,
+  color: "var(--accent)",
+  background: "transparent",
+  border: "none",
+  textDecoration: "underline",
+  cursor: "pointer",
+  padding: 4,
+};
+
+const textInput: CSSProperties = {
+  fontFamily: "var(--pixel-font)",
+  fontSize: 16,
+  padding: "10px 12px",
+  width: "min(320px, 80vw)",
+  color: "#241038",
+  background: "#e9dcb8",
+  border: "3px solid #241038",
+  borderRadius: 2,
+  textAlign: "center",
 };
 
 const btn: CSSProperties = {

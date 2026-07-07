@@ -156,6 +156,62 @@ function buildProfile(history: FloorLog[]): PlayerProfile {
   };
 }
 
+// ── テキスト入力バックアップ（#23）用のローカル評価 ──
+// マイクが使えない審査員向けの保険。STTを介さず、入力テキストと呪文の一致度から
+// フロントだけで EvaluationResult を組み立てる（バックエンド再デプロイ不要で確実に動く）。
+// 気迫（声量・抑揚）は取れないので intensity は中庸固定。gm_comment は定型。
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  let cur = new Array(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+
+// 0..1 の一致率（backend の fuzz.ratio 相当）
+function textMatchRate(spell: string, text: string): number {
+  const a = spell.trim(), b = text.trim();
+  if (!a || !b) return 0;
+  const dist = levenshtein(a, b);
+  return Math.max(0, Math.round((1 - dist / Math.max(a.length, b.length)) * 100) / 100);
+}
+
+function textGmComment(matchRate: number): string {
+  if (matchRate >= 0.95) return "……文字なら完璧か。だが声で示してこそ魔法だぞ。";
+  if (matchRate >= 0.7) return "書き取りは及第点。次は声に出して見せろ。";
+  if (matchRate >= 0.4) return "綴りすら怪しいな。呪文をよく見ろ。";
+  return "これでは呪文とは呼べん。もう一度だ。";
+}
+
+function buildTextEvaluation(spellText: string, text: string): EvaluationResult {
+  const match_rate = textMatchRate(spellText, text);
+  const completion_rate = Math.min(text.trim().length / Math.max(spellText.trim().length, 1), 1);
+  const intensity = 0.6; // 声が取れないので中庸固定
+  const accuracy = (0.5 + match_rate) * completion_rate;
+  const power_mult = 0.7 + 1.1 * intensity;
+  const spell_power = Math.round(accuracy * power_mult * 100) / 100;
+  return {
+    transcript: text.trim(),
+    match_rate,
+    volume: "normal",
+    speed_wpm: 0,
+    completion_rate: Math.round(completion_rate * 100) / 100,
+    hesitation_count: 0,
+    confidence: 1,
+    gm_comment: textGmComment(match_rate),
+    spell_power,
+  };
+}
+
 export function useGame() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
@@ -225,6 +281,36 @@ export function useGame() {
     [state.spell, state.session_id, state.level, state.weapons.length],
   );
 
+  // テキスト入力バックアップ（#23）：声の代わりに入力テキストで詠唱を確定。
+  // STT/バックエンドを介さずローカルで評価を組み立て、通常と同じ FORGED に流す。
+  const castText = useCallback(
+    (text: string) => {
+      if (!state.spell || !text.trim()) return;
+      dispatch({ type: "EVALUATING" });
+      const result = buildTextEvaluation(state.spell.spell_text, text);
+      const floor_log: FloorLog = {
+        floor_id: `floor-${state.level}`,
+        spell_text: state.spell.spell_text,
+        match_rate: result.match_rate,
+        volume: result.volume,
+        speed_wpm: result.speed_wpm,
+        completion_rate: result.completion_rate,
+        hesitation_count: result.hesitation_count,
+        spell_power: result.spell_power,
+      };
+      const weapon: Weapon = {
+        id: `w-${state.level}-${state.weapons.length}`,
+        level: state.level,
+        spell_text: state.spell.spell_text,
+        spell_type: state.spell.spell_type,
+        damage: damageFromPower(result.spell_power),
+        color: colorForSpell(state.spell.spell_type),
+      };
+      dispatch({ type: "FORGED", result, weapon, floor_log });
+    },
+    [state.spell, state.level, state.weapons.length],
+  );
+
   // forged 画面 →（初回 or 復帰）戦線へ
   const enterSurvival = useCallback(() => dispatch({ type: "ENTER_SURVIVAL" }), []);
 
@@ -253,5 +339,5 @@ export function useGame() {
 
   const reset = useCallback(() => dispatch({ type: "RESET" }), []);
 
-  return { state, start, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC };
+  return { state, start, beginRecord, cast, castText, enterSurvival, levelUp, finish, reset, SURVIVE_SEC };
 }
