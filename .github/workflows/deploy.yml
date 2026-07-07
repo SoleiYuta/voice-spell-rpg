@@ -21,7 +21,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ① テスト（評価ロジックのユニットテスト）。GCP認証不要・軽量。
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test deps
+        run: pip install numpy soundfile rapidfuzz pytest
+      - name: Run tests
+        run: cd backend && python -m pytest -q
+
+  # ② デプロイ（①が通ってからのみ実行）
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

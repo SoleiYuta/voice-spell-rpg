@@ -24,7 +24,27 @@ env:
   VERCEL_PROJECT_ID: prj_Ep2MU2rshzrLyLIudP0CRYOICoLd
 
 jobs:
+  # ① 型チェック＋ビルド検証（壊れたコードをデプロイさせないゲート）
+  ci:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install deps
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build
+
+  # ② デプロイ（①が通ってからのみ実行）
   deploy:
+    needs: ci
     runs-on: ubuntu-latest
     defaults:
       run:
