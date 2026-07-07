@@ -109,19 +109,16 @@ export const sfx = {
   playChantStart() {
     tone({ freq: 180, freqTo: 360, dur: 0.22, type: "sine", gain: 0.22 });
   },
-  // 詠唱：送信（呪文発射）。押した瞬間「魔法が組み上がっていく／できそう」な充填感。
-  // 低い和音がゆっくり膨らみながら上へ滑り（エネルギーの収束・上昇）、最後に高音が開いて予感を残す。
+  // 詠唱：送信（呪文発射）。低めで幻想的なスウェルに、遅れて第3音が加わって和音が完成
+  // ＝「魔法が組み上がる／できそう」感を出す。ピッチの滑り・唸り・高音ピコンは避けて不快感を出さない。
   playCast() {
-    // 上昇する和音：C4→G4, E4→B4, G4→D5 とグリッサンドで登る＝力が集まって上がっていく感覚
-    const rise: [number, number][] = [
-      [262, 392], [330, 494], [392, 587],
-    ];
-    rise.forEach(([f0, f1]) => {
-      tone({ freq: f0, freqTo: f1, dur: 0.85, type: "sine", gain: 0.2, attack: 0.5 });
-      tone({ freq: f0 * 1.007, freqTo: f1 * 1.007, dur: 0.85, type: "sine", gain: 0.12, attack: 0.5 }); // シマー
-    });
-    // 終盤に開く高音（充填完了の予感＝「できそう」）
-    tone({ freq: 784, freqTo: 1046, dur: 0.5, type: "sine", gain: 0.14, attack: 0.3, delay: 0.38 });
+    // まず開放的な根音＋5度（C4・G4）がふわっと立ち上がる
+    tone({ freq: 262, dur: 0.95, type: "sine", gain: 0.22, attack: 0.4 });
+    tone({ freq: 392, dur: 0.95, type: "sine", gain: 0.18, attack: 0.45 });
+    // 少し遅れて第3音（E4）が加わり、メジャーコードが“完成”する＝組み上がる感覚
+    tone({ freq: 330, dur: 0.8, type: "sine", gain: 0.17, attack: 0.35, delay: 0.28 });
+    // 終盤に C5 を薄く重ねて幻想的な空気感（きらめかせず持続で）
+    tone({ freq: 523, dur: 0.65, type: "sine", gain: 0.08, attack: 0.4, delay: 0.36 });
   },
   // 命中（軽い高音チック・throttleで鳴りすぎ防止）
   playHit() {
