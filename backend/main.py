@@ -385,6 +385,7 @@ def classify_type(floors: list[FloorLog]) -> tuple[str, dict]:
         "avg_volume": avg_volume,
         "total_hesitation": total_hesitation,
         "avg_match_rate": round(sum(f.match_rate for f in floors) / n, 2),
+        "avg_speed_wpm": round(sum(f.speed_wpm for f in floors) / n, 1),
     }
     return type_key, stats
 
@@ -410,6 +411,90 @@ def build_verdict(type_name: str, stats: dict, best: dict, events: str) -> str:
         return f"見事な詠唱の旅だった。お前はまさに『{type_name}』だ。"
 
 
+# ===== VTuber声質タイプ＋キャラ提案（Gemini 構造化出力）=====
+class VtuberPersona(BaseModel):
+    character_name: str
+    attribute: str
+    catchphrase: str
+    character_setting: str
+    portrait_prompt: str
+
+
+class VoiceTypeResult(BaseModel):
+    voice_type_name: str
+    voice_type_desc: str
+    vtuber_persona: VtuberPersona
+    improvement_tip: str
+
+
+FALLBACK_PERSONA = {
+    "voice_type_name": "唯一無二の詠唱者",
+    "voice_type_desc": "あなたの声には、あなたにしかない響きがある。",
+    "vtuber_persona": {
+        "character_name": "ミスティア",
+        "attribute": "ミステリアス",
+        "catchphrase": "さあ、声を響かせよう。",
+        "character_setting": "古い魔導書から生まれた声の精。聴く者の心にそっと寄り添う。",
+        "portrait_prompt": "anime vtuber character, mysterious mage girl, purple theme, glowing grimoire, soft lighting",
+    },
+    "improvement_tip": "抑揚を少し大きくすると、感情がもっと伝わる。",
+}
+
+
+def generate_vtuber_persona(stats: dict, best: dict, avg_speed: float) -> dict:
+    """声の特徴から VTuber 声質タイプ＋キャラ像を提案（"診断"ではなく楽しい"提案"トーン）。"""
+    vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(
+        stats["avg_volume"], stats["avg_volume"]
+    )
+    prompt = f"""あなたは声の個性から VTuber/配信者のキャラクター像を提案する AI。
+プレイヤーの詠唱で観測された声の特徴から、声質タイプと、それを活かした VTuber キャラ案を作れ。
+
+声の特徴（実測）:
+- 声量: {vol_ja}
+- 発音の正確さ(一致率): {stats['avg_match_rate']:.0%}
+- つっかえ(詰まり合計): {stats['total_hesitation']}回
+- 話す速さ: {avg_speed:.0f} wpm
+- 最も強かった詠唱の威力: {best['spell_power']}
+
+トーン: 楽しく前向き。医学的・専門的な断定はしない（"診断"ではなく"提案"）。
+出力項目:
+- voice_type_name: キャッチーな声質タイプ名（例「凛と通るクール系」「弾ける元気系」）
+- voice_type_desc: その声の強み・魅力を前向きに1〜2文
+- vtuber_persona.character_name: VTuberキャラ名の案
+- vtuber_persona.attribute: キャラの方向性/属性（例: クールミステリアス / 元気応援系）
+- vtuber_persona.catchphrase: 配信で使えそうな一言キャッチコピー
+- vtuber_persona.character_setting: 2〜3文の短いキャラ設定
+- vtuber_persona.portrait_prompt: 立ち絵をAI画像生成するための英語プロンプト（"anime vtuber character, " で始める）
+- improvement_tip: 声をもっと活かすための具体的な改善ヒント1文"""
+    try:
+        res = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=VoiceTypeResult,
+            ),
+        )
+        data = json.loads(res.text)
+        persona = data.get("vtuber_persona") or {}
+        fb = FALLBACK_PERSONA
+        return {
+            "voice_type_name": data.get("voice_type_name") or fb["voice_type_name"],
+            "voice_type_desc": data.get("voice_type_desc") or fb["voice_type_desc"],
+            "vtuber_persona": {
+                "character_name": persona.get("character_name") or fb["vtuber_persona"]["character_name"],
+                "attribute": persona.get("attribute") or fb["vtuber_persona"]["attribute"],
+                "catchphrase": persona.get("catchphrase") or fb["vtuber_persona"]["catchphrase"],
+                "character_setting": persona.get("character_setting") or fb["vtuber_persona"]["character_setting"],
+                "portrait_prompt": persona.get("portrait_prompt") or fb["vtuber_persona"]["portrait_prompt"],
+            },
+            "improvement_tip": data.get("improvement_tip") or fb["improvement_tip"],
+        }
+    except Exception as e:
+        logger.warning(f"generate_vtuber_persona error: {e}")
+        return dict(FALLBACK_PERSONA)
+
+
 @app.post("/result")
 async def result_endpoint(req: ResultRequest):
     floors = req.floors
@@ -420,7 +505,8 @@ async def result_endpoint(req: ResultRequest):
             "type_name": "詠唱なき者",
             "best_floor": {"floor_id": "", "spell_text": "", "spell_power": 0.0},
             "ai_verdict": "まだ一度も詠唱していないようだ。次はぜひ、その声を聞かせてくれ。",
-            "stats": {"avg_volume": "normal", "total_hesitation": 0, "avg_match_rate": 0.0},
+            "stats": {"avg_volume": "normal", "total_hesitation": 0, "avg_match_rate": 0.0, "avg_speed_wpm": 0.0},
+            **FALLBACK_PERSONA,
         }
 
     type_key, stats = classify_type(floors)
@@ -447,8 +533,10 @@ async def result_endpoint(req: ResultRequest):
 
     loop = asyncio.get_event_loop()
     t0 = time.time()
-    verdict = await loop.run_in_executor(
-        None, lambda: build_verdict(type_name, stats, best_floor, events_str)
+    # 総評とVTuberキャラ提案を並列生成（Gemini 2本を同時に投げてレイテンシを抑える）
+    verdict, persona = await asyncio.gather(
+        loop.run_in_executor(None, lambda: build_verdict(type_name, stats, best_floor, events_str)),
+        loop.run_in_executor(None, lambda: generate_vtuber_persona(stats, best_floor, stats["avg_speed_wpm"])),
     )
     logger.info(f"[timing] result gemini={time.time()-t0:.2f}s floors={len(floors)}")
 
@@ -459,4 +547,5 @@ async def result_endpoint(req: ResultRequest):
         "best_floor": best_floor,
         "ai_verdict": verdict,
         "stats": stats,
+        **persona,
     }
