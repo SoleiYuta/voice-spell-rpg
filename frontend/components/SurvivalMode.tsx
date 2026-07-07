@@ -350,8 +350,9 @@ export default function SurvivalMode({
 
       // スポーン
       w.spawnTimer -= dt;
-      const spawnInterval = Math.max(0.3, 1.2 - level * 0.1 - w.elapsed * 0.02);
-      if (w.spawnTimer <= 0) { spawnEnemy(w, level); w.spawnTimer = spawnInterval; }
+      // 湧きを約4倍に（間隔を1/4）。処理落ち防止に上限240体
+      const spawnInterval = Math.max(0.08, (1.2 - level * 0.1 - w.elapsed * 0.02) / 4);
+      if (w.spawnTimer <= 0 && w.enemies.length < 240) { spawnEnemy(w, level); w.spawnTimer = spawnInterval; }
 
       // 敵移動＆接触
       for (const e of w.enemies) {
