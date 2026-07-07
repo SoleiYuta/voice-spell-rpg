@@ -45,7 +45,7 @@ const PALETTE: Record<Elem, string[]> = {
   wind: ["#eafff0", "#a6f0c0", "#5ad98a", "#2fa866"],
 };
 const FIRE_INTERVAL: Record<Elem, number> = {
-  fire: 0.3, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
+  fire: 0.5, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
 };
 
 // 炎ドット絵（プレイヤーから立ち昇る）。R=赤 O=橙 Y=黄 W=芯
@@ -74,7 +74,7 @@ interface Bolt { pts: { x: number; y: number }[]; life: number; max: number; col
 interface IceFall { x: number; y: number; vy: number; targetY: number; dmg: number; done: boolean; }
 interface Hole { x: number; y: number; life: number; max: number; dmg: number; r: number; }
 interface Beam { x: number; y: number; angle: number; life: number; max: number; dmg: number; hit: Set<Enemy>; }
-interface Tornado { x: number; y: number; life: number; max: number; dmg: number; r: number; }
+interface Tornado { x: number; y: number; angle: number; speed: number; age: number; dmg: number; r: number; }
 
 interface World {
   player: { x: number; y: number; hp: number; maxHp: number; r: number };
@@ -283,29 +283,10 @@ export default function SurvivalMode({
         if (d < e.r + w.player.r) { if (!debugRef.current) w.player.hp -= 22 * dt; w.shake = Math.min(8, w.shake + 16 * dt); }
       }
 
-      // 炎アウラ（自機周囲に持続ダメージ）: 炎属性武器の合計ダメージで
-      let fireDps = 0;
-      for (const weapon of weaponsRef.current) if (toElem(weapon.spell_type) === "fire") fireDps += weapon.damage;
-      if (fireDps > 0) {
-        const R = 46;
-        for (const e of w.enemies) {
-          if (e.hp <= 0) continue;
-          if (Math.hypot(e.x - w.player.x, e.y - w.player.y) < R + e.r) {
-            e.hp -= fireDps * dt * 2.2;
-            if (e.hp <= 0) { w.kills += 1; burst(w, e.x, e.y, "fire", 18, 200); w.shake = Math.min(8, w.shake + 3); }
-          }
-        }
-        if (Math.random() < 0.95) {
-          const a = Math.random() * Math.PI * 2, rr = R * (0.3 + Math.random() * 0.7);
-          w.particles.push({ x: w.player.x + Math.cos(a) * rr, y: w.player.y + Math.sin(a) * rr, vx: (Math.random() - 0.5) * 24, vy: -40 - Math.random() * 50, life: 0.4, max: 0.7, color: PALETTE.fire[1 + Math.floor(Math.random() * 3)], size: 2 + Math.floor(Math.random() * 3) });
-        }
-      }
-
       // 自動攻撃（属性ごとに挙動が違う）
       const SHOT_SPEED = 330;
       for (const weapon of weaponsRef.current) {
         const el = toElem(weapon.spell_type);
-        if (el === "fire") continue; // 炎は上のアウラで常時処理
         w.fireAt[weapon.id] = (w.fireAt[weapon.id] ?? 0) - dt;
         if (w.fireAt[weapon.id] > 0) continue;
         let best: Enemy | null = null, bestD = Infinity;
@@ -315,7 +296,11 @@ export default function SurvivalMode({
         }
         if (!best) continue;
 
-        if (el === "ice") {
+        if (el === "fire") {
+          // 火を敵に向かって撃つ：貫通する炎弾（見た目は FLAME ドット絵）
+          const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
+          w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * 270, vy: Math.sin(a) * 270, dmg: weapon.damage, el: "fire", life: 1.8, hit: new Set<Enemy>() });
+        } else if (el === "ice") {
           // 高速落下する氷塊：最寄り最大2体の頭上から
           const targets = [...w.enemies]
             .sort((p, q) => Math.hypot(p.x - w.player.x, p.y - w.player.y) - Math.hypot(q.x - w.player.x, q.y - w.player.y))
@@ -345,8 +330,8 @@ export default function SurvivalMode({
           const N = 10;
           for (let i = 0; i < N; i++) w.beams.push({ x: w.player.x, y: w.player.y, angle: base + (i / N) * Math.PI * 2, life: 0.18, max: 0.18, dmg: weapon.damage, hit: new Set<Enemy>() });
         } else if (el === "wind") {
-          // 竜巻：敵位置に発生、ノックバック＋軽ダメージ
-          w.tornados.push({ x: best.x, y: best.y, life: 0.9, max: 0.9, dmg: weapon.damage, r: 62 });
+          // 竜巻：発生してランダムに移動（場外に出たら消滅）。触れた敵をノックバック
+          w.tornados.push({ x: best.x, y: best.y, angle: Math.random() * Math.PI * 2, speed: 80, age: 0, dmg: weapon.damage, r: 62 });
         } else {
           const a = Math.atan2(best.y - w.player.y, best.x - w.player.x);
           w.shots.push({ x: w.player.x, y: w.player.y, vx: Math.cos(a) * SHOT_SPEED, vy: Math.sin(a) * SHOT_SPEED, dmg: weapon.damage, el, life: 2.2, hit: new Set<Enemy>() });
@@ -411,9 +396,12 @@ export default function SurvivalMode({
       }
       w.beams = w.beams.filter((b) => b.life > 0);
 
-      // 竜巻：範囲内の敵を外向きにノックバック＋軽い継続ダメージ
+      // 竜巻：ランダムに移動しつつ、触れた敵を外向きにノックバック＋軽ダメージ。場外で消滅。
       for (const to of w.tornados) {
-        to.life -= dt;
+        to.age += dt;
+        to.angle += (Math.random() - 0.5) * 2.5 * dt; // ゆらぎ（ランダムウォーク）
+        to.x += Math.cos(to.angle) * to.speed * dt;
+        to.y += Math.sin(to.angle) * to.speed * dt;
         for (const e of w.enemies) {
           if (e.hp <= 0) continue;
           const tx = e.x - to.x, ty = e.y - to.y;
@@ -425,7 +413,8 @@ export default function SurvivalMode({
           }
         }
       }
-      w.tornados = w.tornados.filter((t) => t.life > 0);
+      const TM = 80; // 場外マージン
+      w.tornados = w.tornados.filter((t) => t.age < 8 && t.x > -TM && t.x < W + TM && t.y > -TM && t.y < H + TM);
 
       // 死亡敵の一括除去
       w.enemies = w.enemies.filter((e) => e.hp > 0);
@@ -439,12 +428,11 @@ export default function SurvivalMode({
       w.flash = Math.max(0, w.flash - 2 * dt);
     };
 
-    // プレイヤーから立ち昇る炎ドット絵
-    const drawFlame = (cx: number, cy: number) => {
-      const cs = 2.7;
+    // 炎ドット絵（火弾＝(cx,cy) を中心に描画）
+    const drawFlame = (cx: number, cy: number, cs: number) => {
       const cols = FLAME[0].length, rows = FLAME.length;
       const ox = cx - (cols * cs) / 2;
-      const oy = cy - rows * cs + 12;
+      const oy = cy - (rows * cs) / 2;
       const bob = (Math.random() - 0.5) * 2;
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -498,9 +486,6 @@ export default function SurvivalMode({
       px(p.x - 4, p.y - 1, 3, "#fff");
       px(p.x + 4, p.y - 1, 3, "#fff");
 
-      // 炎アウラのドット絵（炎属性を持っていれば）
-      if (weaponsRef.current.some((wp) => toElem(wp.spell_type) === "fire")) drawFlame(p.x, p.y);
-
       // ===== 光り物：加算合成 =====
       ctx.globalCompositeOperation = "lighter";
 
@@ -515,9 +500,8 @@ export default function SurvivalMode({
 
       // 竜巻（回転するドット）
       for (const to of w.tornados) {
-        const a = to.life / to.max;
-        const spin = (to.max - to.life) * 16;
-        ctx.globalAlpha = a;
+        const spin = to.age * 16;
+        ctx.globalAlpha = 0.9;
         for (let k = 0; k < 9; k++) {
           const ang = spin + (k / 9) * Math.PI * 2;
           const rad = to.r * (0.25 + (k % 3) * 0.28);
@@ -537,7 +521,8 @@ export default function SurvivalMode({
       for (const s of w.shots) {
         const pal = PALETTE[s.el];
         ctx.shadowColor = pal[2]; ctx.shadowBlur = 10;
-        px(s.x, s.y, 5, pal[2]); px(s.x, s.y, 3, pal[0]);
+        if (s.el === "fire") { drawFlame(s.x, s.y, 2); }
+        else { px(s.x, s.y, 5, pal[2]); px(s.x, s.y, 3, pal[0]); }
         ctx.shadowBlur = 0;
       }
 
