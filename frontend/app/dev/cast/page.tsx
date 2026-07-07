@@ -22,6 +22,16 @@ const SFX_TESTS: { label: string; play: () => void }[] = [
   { label: "敗北", play: () => sfx.playLose() },
 ];
 
+// 属性ごとの攻撃発射音
+const ATK_TESTS: { label: string; el: string }[] = [
+  { label: "火", el: "fire" },
+  { label: "氷", el: "ice" },
+  { label: "雷", el: "thunder" },
+  { label: "闇", el: "dark" },
+  { label: "光", el: "light" },
+  { label: "風", el: "wind" },
+];
+
 const MOCK_SPELL: SpellData = {
   spell_text: "紅蓮の炎よ、我が敵を焼き尽くせ",
   difficulty: 3,
@@ -62,6 +72,16 @@ export default function CastDevPage() {
         <button style={chip(false)} onClick={() => addLog(`mute → ${sfx.toggleMute()}`)}>
           mute切替
         </button>
+      </div>
+
+      {/* 属性ごとの攻撃発射音 */}
+      <div style={sfxBar}>
+        <strong style={{ fontFamily: "var(--pixel-font)", fontSize: 13 }}>⚔ 属性攻撃</strong>
+        {ATK_TESTS.map((a) => (
+          <button key={a.el} style={chip(false)} onClick={() => { sfx.playAttack(a.el); addLog(`ATK: ${a.label}`); }}>
+            {a.label}
+          </button>
+        ))}
       </div>
 
       {error && <p style={{ color: "tomato" }}>{error}</p>}

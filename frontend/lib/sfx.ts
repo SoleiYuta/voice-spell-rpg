@@ -101,6 +101,35 @@ export const sfx = {
     // 終盤に C5 を薄く重ねて幻想的な空気感（きらめかせず持続で）
     tone({ freq: 523, dur: 0.65, type: "sine", gain: 0.08, attack: 0.4, delay: 0.36 });
   },
+  // 属性攻撃の発射音（属性ごとに音色を変える）。自動連射なので短く控えめ＋属性別throttle。
+  // 幻想系パレット（サイン/三角）に統一。
+  playAttack(el: string) {
+    if (!throttled("atk-" + el, 90)) return;
+    switch (el) {
+      case "fire": // ボッと燃え立つ低め
+        tone({ freq: 330, freqTo: 200, dur: 0.11, type: "triangle", gain: 0.16 });
+        break;
+      case "ice": // キンと澄んだ高音
+        tone({ freq: 1568, dur: 0.06, type: "sine", gain: 0.14 });
+        tone({ freq: 2093, dur: 0.05, type: "sine", gain: 0.1, delay: 0.04 });
+        break;
+      case "thunder": // バチッと鋭い下降
+        tone({ freq: 1200, freqTo: 420, dur: 0.07, type: "triangle", gain: 0.16 });
+        break;
+      case "dark": // ドゥンと低く沈む
+        tone({ freq: 165, freqTo: 110, dur: 0.17, type: "sine", gain: 0.2 });
+        break;
+      case "light": // シャンと明るい二音
+        tone({ freq: 988, dur: 0.09, type: "sine", gain: 0.13 });
+        tone({ freq: 1319, dur: 0.09, type: "sine", gain: 0.1, delay: 0.02 });
+        break;
+      case "wind": // フォッと上へ抜ける
+        tone({ freq: 520, freqTo: 940, dur: 0.12, type: "sine", gain: 0.12 });
+        break;
+      default:
+        tone({ freq: 660, dur: 0.06, type: "sine", gain: 0.12 });
+    }
+  },
   // 命中（軽い高音チック・throttleで鳴りすぎ防止）。サインで清潔感、詠唱系と同じ調性(G5)。
   playHit() {
     if (!throttled("hit", 55)) return;
