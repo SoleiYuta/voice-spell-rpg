@@ -107,10 +107,15 @@ export const sfx = {
   playChantStart() {
     tone({ freq: 180, freqTo: 360, dur: 0.22, type: "sine", gain: 0.22 });
   },
-  // 詠唱：送信（呪文発射・下降ザップ＋ノイズ）
+  // 詠唱：送信（呪文発射）。「きゅりりん」＝上昇スイープ＋高音のキラキラ（トリル）。
   playCast() {
-    tone({ freq: 720, freqTo: 160, dur: 0.28, type: "sawtooth", gain: 0.32 });
-    noise(0.14, 0.16, 900);
+    // きゅ：短い上昇スイープ
+    tone({ freq: 520, freqTo: 1300, dur: 0.13, type: "triangle", gain: 0.3 });
+    // りりん：高音の粒を上下に散らしてキラキラ感
+    const twinkle: [number, number][] = [
+      [1568, 0.12], [1319, 0.18], [1760, 0.24],
+    ];
+    twinkle.forEach(([f, d]) => tone({ freq: f, dur: 0.1, type: "sine", gain: 0.22, delay: d }));
   },
   // 命中（軽い高音チック・throttleで鳴りすぎ防止）
   playHit() {
