@@ -119,7 +119,7 @@ def analyze_audio(wav_bytes: bytes) -> dict:
         y = y.mean(axis=1)
     y = np.asarray(y, dtype=np.float32)
     if y.size == 0:
-        return {"volume": "quiet", "hesitation_count": 0}
+        return {"volume": "quiet", "hesitation_count": 0, "intensity": 0.0}
 
     # フレームRMS（25ms窓・10msホップ）を numpy で算出
     win = max(1, int(sr * 0.025))
@@ -133,7 +133,7 @@ def analyze_audio(wav_bytes: bytes) -> dict:
 
     peak = float(frames.max())
     if peak <= 0:
-        return {"volume": "quiet", "hesitation_count": 0}
+        return {"volume": "quiet", "hesitation_count": 0, "intensity": 0.0}
 
     # 無音判定：ピークの top_db=30 相当（10^(-30/20) ≒ 0.0316倍）を閾値に
     voiced = frames > peak * (10 ** (-30 / 20))
@@ -151,9 +151,22 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     segments = int(np.sum(voiced[1:] & ~voiced[:-1])) + (1 if bool(voiced[0]) else 0)
     hesitation_count = max(0, segments - 1)
 
+    # 詠唱の強さ intensity(0..1)：声量 + 抑揚(発話フレームRMSの変動係数)。
+    # 棒読み=抑揚が小さく低め、気迫のこもった詠唱=大きく張り・抑揚があり高くなる。
+    voiced_rms = frames[voiced]
+    if voiced_rms.size and speech_rms > 0:
+        loud_norm = min(1.0, speech_rms / 0.06)  # RMS 0.06 で最大
+        mean_v = float(voiced_rms.mean())
+        cv = float(voiced_rms.std() / mean_v) if mean_v > 0 else 0.0  # 抑揚(変動係数)
+        dyn_norm = min(1.0, cv / 0.5)
+        intensity = round(0.55 * loud_norm + 0.45 * dyn_norm, 3)
+    else:
+        intensity = 0.0
+
     return {
         "volume": volume,
         "hesitation_count": hesitation_count,
+        "intensity": intensity,
     }
 
 
@@ -167,7 +180,7 @@ def generate_gm_comment(
     spell_power: float,
 ) -> str:
     vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(volume, volume)
-    prompt = f"""あなたは古代魔導書に宿る皮肉屋の精霊。プレイヤーの今の詠唱に一言だけ返せ。
+    prompt = f"""あなたは古代魔導書に宿る精霊。プレイヤーを見守る、頼れる師のような存在だ。今の詠唱に一言だけ返せ。
 
 実測:
 - 認識テキスト: 「{transcript}」
@@ -179,8 +192,9 @@ def generate_gm_comment(
 - 詠唱威力: {spell_power}
 
 ルール:
-- 上の実測のうち最も目立つ点を1つ具体的に引用して、褒め・煽り・挑発を混ぜる（例「3回も噛んだな」「大声だけは一流だ」）
-- 日本語1文・40字以内・皮肉屋の口調
+- 上の実測のうち最も目立つ点を1つ具体的に引用し、まず良かった点を認めてから、次への軽い後押しを添える（例「よく声が通っていたぞ、その調子だ」「少し詰まったが、気迫は十分だった」）
+- あくまで前向き・温かい励ましの口調。見下し・皮肉・挑発は禁止
+- 日本語1文・40字以内
 - ラベル名（"一致率""声量"等）はそのまま書かず、自然な口語で"""
     try:
         response = gemini_client.models.generate_content(
@@ -193,9 +207,14 @@ def generate_gm_comment(
         return "魔導書が沈黙している……"
 
 
-def calc_spell_power(match_rate: float, volume: str, completion_rate: float) -> float:
-    volume_factor = {"loud": 1.3, "normal": 1.0, "quiet": 0.8}.get(volume, 1.0)
-    return round((0.5 + match_rate) * volume_factor * completion_rate, 2)
+def calc_spell_power(match_rate: float, completion_rate: float, intensity: float) -> float:
+    """威力 = 詠唱の強さ(intensity) に比例。ただし呪文を正しく言えていること(発音一致率×完了率)が前提のゲート。
+    - accuracy(0.5〜1.5): 呪文をどれだけ正確に最後まで言えたか。言えていないと伸びない。
+    - power_mult(0.7〜1.8): 気迫(声量＋抑揚)。棒読み・弱い声だと低く、張りのある詠唱で高くなる。
+    → 正しく＋気迫を込めて唱えるほど威力が上がる（棒読み最適を解消）。"""
+    accuracy = (0.5 + match_rate) * completion_rate
+    power_mult = 0.7 + 1.1 * max(0.0, min(1.0, intensity))
+    return round(accuracy * power_mult, 2)
 
 
 @app.post("/evaluate")
@@ -224,7 +243,7 @@ async def evaluate(
 
     match_rate = calc_match_rate(spell_text, transcript)
     completion_rate = round(min(len(transcript) / max(len(spell_text), 1), 1.0), 2)
-    spell_power = calc_spell_power(match_rate, audio["volume"], completion_rate)
+    spell_power = calc_spell_power(match_rate, completion_rate, audio["intensity"])
 
     t2 = time.time()
     gm_comment = await loop.run_in_executor(
@@ -249,6 +268,7 @@ async def evaluate(
         "completion_rate": completion_rate,
         "hesitation_count": audio["hesitation_count"],
         "confidence": round(confidence, 2),
+        "intensity": audio["intensity"],
         "gm_comment": gm_comment,
         "spell_power": spell_power,
     }
@@ -373,13 +393,13 @@ def build_verdict(type_name: str, stats: dict, best: dict, events: str) -> str:
     vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(
         stats["avg_volume"], stats["avg_volume"]
     )
-    prompt = f"""あなたは皮肉屋の古代魔導書。プレイヤーの詠唱セッションを総評する。
+    prompt = f"""あなたは古代魔導書に宿る精霊。プレイヤーの詠唱の旅を、温かく見送るように総評する。
 確定タイプ: {type_name}
 実測: 平均音量={vol_ja} / 詰まり合計={stats['total_hesitation']} / 平均一致率={stats['avg_match_rate']:.0%}
 ベスト詠唱: 「{best['spell_text']}」(威力{best['spell_power']})
 観測事象: {events}
-→ 上の観測事象と数値を必ず引用し、50〜80字の日本語で煽れ。
-ただし「確定タイプ」「平均音量」等のラベル名はそのまま書かず、自然な口語で。タイプ名は文に織り込む。性格の捏造・改善アドバイスは禁止。"""
+→ 上の観測事象と数値を必ず引用し、50〜80字の日本語で称え、労え。
+前向きで温かい口調。見下し・皮肉・挑発は禁止。「確定タイプ」「平均音量」等のラベル名はそのまま書かず、自然な口語で。タイプ名は誇らしげに文へ織り込む。性格の捏造・改善アドバイスは禁止。"""
     try:
         res = gemini_client.models.generate_content(
             model="gemini-2.5-flash", contents=prompt
@@ -387,7 +407,7 @@ def build_verdict(type_name: str, stats: dict, best: dict, events: str) -> str:
         return res.text.strip()
     except Exception as e:
         logger.warning(f"build_verdict error: {e}")
-        return f"お前は{type_name}だ。それ以上でも以下でもない。"
+        return f"見事な詠唱の旅だった。お前はまさに『{type_name}』だ。"
 
 
 @app.post("/result")
@@ -399,7 +419,7 @@ async def result_endpoint(req: ResultRequest):
             "type_key": "unknown",
             "type_name": "詠唱なき者",
             "best_floor": {"floor_id": "", "spell_text": "", "spell_power": 0.0},
-            "ai_verdict": "一度も詠唱せぬとはな。話にならん。",
+            "ai_verdict": "まだ一度も詠唱していないようだ。次はぜひ、その声を聞かせてくれ。",
             "stats": {"avg_volume": "normal", "total_hesitation": 0, "avg_match_rate": 0.0},
         }
 
