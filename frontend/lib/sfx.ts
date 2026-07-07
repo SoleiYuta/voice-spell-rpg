@@ -118,13 +118,17 @@ export const sfx = {
       tone({ freq: f, dur: 0.16, type: "triangle", gain: 0.26, delay: i * 0.08 }),
     );
   },
-  // 勝利：短い上昇のあと C メジャー和音がふわっと開いて伸びる（レベルUPより長く・和音で壮大）。
+  // 勝利：しっかり駆け上がって高い C で素直に締める（膨らませる「ファーン」は入れない）。
+  // レベルUP より音数が多く・高く登り切るので区別できる。
   playWin() {
-    [392, 523, 659].forEach((f, i) => tone({ freq: f, dur: 0.13, type: "triangle", gain: 0.24, delay: i * 0.1 }));
-    // 到達＝C メジャー和音（C5-E5-G5-C6）を膨らませて伸ばす
-    [523, 659, 784, 1047].forEach((f) =>
-      tone({ freq: f, dur: 0.8, type: "triangle", gain: 0.14, attack: 0.08, delay: 0.34 }),
+    const run: [number, number][] = [
+      [392, 0], [523, 0.1], [659, 0.2], [784, 0.3], [1047, 0.42],
+    ];
+    run.forEach(([f, d], i) =>
+      tone({ freq: f, dur: i === run.length - 1 ? 0.5 : 0.13, type: "triangle", gain: 0.26, delay: d }),
     );
+    // 締めの C6 に 5度(G5)を軽く重ねて華やかさ（普通の立ち上がり＝膨らませない）
+    tone({ freq: 784, dur: 0.45, type: "triangle", gain: 0.13, delay: 0.42 });
   },
   // 敗北：力尽きる下降（A4→F4→C4）＋低い根音がしぼむ。短調寄りで幻想的な物悲しさ。
   playLose() {
