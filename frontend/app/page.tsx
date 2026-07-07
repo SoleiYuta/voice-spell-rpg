@@ -5,7 +5,7 @@
 //   → forged で威力(=武器)を提示し「戦線へ」。
 // ■ 第2部 ヴァンサバモード: SurvivalMode（Canvasアクション）。撃破でレベルUP。
 // ■ レベルUP時は SurvivalMode を凍結(paused)したまま、上に詠唱UIを重ねて新呪文を詠唱→復帰。
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useGame, colorForSpell, type Weapon } from "@/lib/useGame";
 import EvaluationBars from "@/components/EvaluationBars";
@@ -20,15 +20,9 @@ import { moodFromMatchRate } from "@/components/PixelGrimoire";
 
 const CHANT_PHASES = new Set(["presenting", "ready", "recording", "evaluating", "forged"]);
 
-// デバッグ用：全属性を一度に装備してエフェクトを見るためのロードアウト
-const DEBUG_WEAPONS: Weapon[] = [
-  { id: "dbg-fire", level: 1, spell_text: "炎", spell_type: "fire", damage: 25, color: colorForSpell("fire") },
-  { id: "dbg-ice", level: 2, spell_text: "氷", spell_type: "ice", damage: 25, color: colorForSpell("ice") },
-  { id: "dbg-thunder", level: 3, spell_text: "雷", spell_type: "thunder", damage: 25, color: colorForSpell("thunder") },
-  { id: "dbg-dark", level: 4, spell_text: "闇", spell_type: "dark", damage: 25, color: colorForSpell("dark") },
-  { id: "dbg-light", level: 5, spell_text: "光", spell_type: "light", damage: 25, color: colorForSpell("light") },
-  { id: "dbg-wind", level: 6, spell_text: "風", spell_type: "wind", damage: 25, color: colorForSpell("wind") },
-];
+// デバッグ用の属性一覧（1つずつ選んで単体でエフェクトを確認できる）
+const DEBUG_ELEMS = ["fire", "ice", "thunder", "dark", "light", "wind"] as const;
+const ELEM_JA: Record<string, string> = { fire: "炎", ice: "氷", thunder: "雷", dark: "闇", light: "光", wind: "風" };
 const DEBUG_CODE = "wwssadadab"; // タイトル画面でこれを打つとデバッグへ
 
 export default function Home() {
@@ -36,6 +30,18 @@ export default function Home() {
     useGame();
   const [micError, setMicError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
+  const [dbgElem, setDbgElem] = useState<string>("fire"); // "all" or 単体属性
+
+  // デバッグ装備：単体属性 or 全部（切替で属性ごとに単独で見られる）
+  const debugWeapons = useMemo<Weapon[]>(() => {
+    if (dbgElem === "all") {
+      return DEBUG_ELEMS.map((t, i) => ({
+        id: `dbg-${t}`, level: i + 1, spell_text: ELEM_JA[t], spell_type: t, damage: 25, color: colorForSpell(t),
+      }));
+    }
+    // 単体は id 固定（切替しても発射間隔が乱れず、ラウンドリセットも起きない）
+    return [{ id: "dbg-single", level: 1, spell_text: ELEM_JA[dbgElem], spell_type: dbgElem, damage: 25, color: colorForSpell(dbgElem) }];
+  }, [dbgElem]);
 
   // タイトル画面で秘密のコマンドを打つとデバッグモードへ
   useEffect(() => {
@@ -57,19 +63,41 @@ export default function Home() {
         <h1 style={{ color: "var(--accent)", fontFamily: "var(--pixel-font)", fontSize: 20, margin: "4px 0 6px" }}>
           🔧 DEBUG MODE
         </h1>
-        <p style={{ fontSize: 12, opacity: 0.7 }}>無敵・エンドレス・全属性装備。エフェクト確認用。</p>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", margin: "8px 0" }}>
-          {DEBUG_WEAPONS.map((w) => (
-            <span
-              key={w.id}
-              style={{ fontSize: 11, padding: "2px 8px", border: `1.5px solid ${w.color}`, color: w.color, borderRadius: 6, fontFamily: "var(--pixel-font)" }}
-            >
-              {w.spell_type}
-            </span>
-          ))}
+        <p style={{ fontSize: 12, opacity: 0.7 }}>無敵・エンドレス。属性を選んで単体でエフェクト確認。</p>
+
+        {/* 属性セレクタ：1つ選ぶとその属性だけ発射＝エフェクトを単独で見られる */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", margin: "10px 0" }}>
+          {DEBUG_ELEMS.map((t) => {
+            const on = dbgElem === t;
+            const c = colorForSpell(t);
+            return (
+              <button
+                key={t}
+                onClick={() => setDbgElem(t)}
+                style={{
+                  fontSize: 13, padding: "5px 12px", borderRadius: 6, cursor: "pointer",
+                  border: `2px solid ${c}`, color: on ? "#000" : c,
+                  background: on ? c : "transparent", fontFamily: "var(--pixel-font)",
+                }}
+              >
+                {ELEM_JA[t]}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setDbgElem("all")}
+            style={{
+              fontSize: 13, padding: "5px 12px", borderRadius: 6, cursor: "pointer",
+              border: "2px solid #fff", color: dbgElem === "all" ? "#000" : "#fff",
+              background: dbgElem === "all" ? "#fff" : "transparent", fontFamily: "var(--pixel-font)",
+            }}
+          >
+            全部
+          </button>
         </div>
+
         <SurvivalMode
-          weapons={DEBUG_WEAPONS}
+          weapons={debugWeapons}
           durationSec={99999}
           paused={false}
           onLevelUp={() => {}}
