@@ -49,6 +49,13 @@ const FIRE_INTERVAL: Record<Elem, number> = {
   fire: 1.0, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
 };
 
+// 敵タイプ別の色 [濃い縁, 本体]。0=雑魚(赤) / 1=速い小型(橙) / 2=硬い大型(紫)
+const ENEMY_COL: string[][] = [
+  ["#8a1810", "#c8341a"],
+  ["#c8781a", "#ffb43c"],
+  ["#3a1a6a", "#7a3fd0"],
+];
+
 // 炎ドット絵（プレイヤーから立ち昇る）。R=赤 O=橙 Y=黄 W=芯
 const FLAME_COL: Record<string, string> = { R: "#e01e0a", O: "#ff8c1a", Y: "#ffd21e", W: "#fff2a0" };
 const FLAME = [
@@ -68,7 +75,7 @@ const FLAME = [
   "..RRRRR..",
 ];
 
-interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; flash: number; }
+interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; flash: number; type: number; }
 interface Shot { x: number; y: number; vx: number; vy: number; dmg: number; el: Elem; life: number; hit: Set<Enemy>; }
 interface DamageText { x: number; y: number; vy: number; life: number; max: number; text: string; color: string; } // 命中ダメージ数字
 interface Ring { x: number; y: number; r: number; life: number; max: number; color: string; } // 撃破の弾けリング
@@ -81,7 +88,7 @@ interface Tornado { x: number; y: number; angle: number; speed: number; age: num
 interface Flame { x: number; y: number; vx: number; vy: number; moveTime: number; stopLife: number; dmg: number; r: number; } // 炎弾（途中で止まって燃え続ける）
 
 interface World {
-  player: { x: number; y: number; hp: number; maxHp: number; r: number };
+  player: { x: number; y: number; hp: number; maxHp: number; r: number; face: number };
   enemies: Enemy[];
   shots: Shot[];
   particles: Particle[];
@@ -155,7 +162,7 @@ export default function SurvivalMode({
 
   useEffect(() => {
     worldRef.current = {
-      player: { x: W / 2, y: H / 2, hp: 100, maxHp: 100, r: 12 },
+      player: { x: W / 2, y: H / 2, hp: 100, maxHp: 100, r: 12, face: 1 },
       enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [], flames: [],
       damageTexts: [], rings: [],
       kills: 0, elapsed: 0, spawnTimer: 0, fireAt: {},
@@ -207,8 +214,13 @@ export default function SurvivalMode({
       else if (edge === 1) { x = W + 14; y = Math.random() * H; }
       else if (edge === 2) { x = Math.random() * W; y = H + 14; }
       else { x = -14; y = Math.random() * H; }
-      const hp = 16 + level * 8 + w.elapsed * 0.5;
-      w.enemies.push({ x, y, hp, maxHp: hp, r: 11, speed: 40 + level * 4 + Math.random() * 24, flash: 0 });
+      const baseHp = 16 + level * 8 + w.elapsed * 0.5;
+      const baseSpeed = 40 + level * 4 + Math.random() * 24;
+      const roll = Math.random();
+      let type = 0, r = 11, hp = baseHp, speed = baseSpeed;
+      if (level >= 3 && roll > 0.86) { type = 2; r = 16; hp = baseHp * 2.2; speed = baseSpeed * 0.62; } // 硬い大型
+      else if (level >= 2 && roll < 0.28) { type = 1; r = 8; hp = baseHp * 0.6; speed = baseSpeed * 1.5; } // 速い小型
+      w.enemies.push({ x, y, hp, maxHp: hp, r, speed, flash: 0, type });
     };
 
     const burst = (w: World, x: number, y: number, el: Elem, n: number, speed: number) => {
@@ -288,6 +300,7 @@ export default function SurvivalMode({
         if (keys.current.has("arrowdown") || keys.current.has("s")) dy += 1;
       }
       const len = Math.hypot(dx, dy);
+      if (Math.abs(dx) > 0.01) w.player.face = dx > 0 ? 1 : -1; // 向き更新
       if (len > 0) { w.player.x += (dx / len) * PLAYER_SPEED * dt; w.player.y += (dy / len) * PLAYER_SPEED * dt; }
       w.player.x = Math.max(w.player.r, Math.min(W - w.player.r, w.player.x));
       w.player.y = Math.max(w.player.r, Math.min(H - w.player.r, w.player.y));
@@ -516,30 +529,43 @@ export default function SurvivalMode({
         ctx.globalAlpha = 1;
       }
 
-      // 敵
+      // 敵（タイプ別の色・影・歩行の上下ボブ）
       for (const e of w.enemies) {
+        // 影
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.beginPath(); ctx.ellipse(e.x, e.y + e.r * 0.85, e.r * 0.8, e.r * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+        const ey = e.y + Math.round(Math.sin(w.elapsed * 9 + e.x) * 1.5); // 歩行ボブ
         if (e.flash > 0) {
-          px(e.x, e.y, e.r * 2, "#ffffff"); // 被弾フラッシュ（真っ白）
+          px(e.x, ey, e.r * 2, "#ffffff"); // 被弾フラッシュ（真っ白）
         } else {
-          px(e.x, e.y, e.r * 2, "#8a1810");
-          px(e.x, e.y, e.r * 1.5, "#c8341a");
-          px(e.x - 3.5, e.y - 2, 2.5, "#1a0605");
-          px(e.x + 3.5, e.y - 2, 2.5, "#1a0605");
+          const col = ENEMY_COL[e.type] ?? ENEMY_COL[0];
+          px(e.x, ey, e.r * 2, col[0]);
+          px(e.x, ey, e.r * 1.5, col[1]);
+          const eo = e.r * 0.32;
+          px(e.x - eo, ey - 2, 2.5, "#1a0605");
+          px(e.x + eo, ey - 2, 2.5, "#1a0605");
         }
         if (e.hp < e.maxHp) {
-          ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(e.x - e.r, e.y - e.r - 6, e.r * 2, 3);
-          ctx.fillStyle = "#ff8a5c"; ctx.fillRect(e.x - e.r, e.y - e.r - 6, e.r * 2 * (e.hp / e.maxHp), 3);
+          ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(e.x - e.r, ey - e.r - 6, e.r * 2, 3);
+          ctx.fillStyle = "#ff8a5c"; ctx.fillRect(e.x - e.r, ey - e.r - 6, e.r * 2 * (e.hp / e.maxHp), 3);
         }
       }
 
-      // プレイヤー
+      // プレイヤー（影・移動ボブ・向き反映・杖）
       const p = w.player;
-      px(p.x, p.y + 2, 20, "#4a1f8a");
-      px(p.x, p.y, 16, "#a06bff");
-      px(p.x, p.y - 12, 14, "#2a1250");
-      px(p.x, p.y - 18, 8, "#2a1250");
-      px(p.x - 4, p.y - 1, 3, "#fff");
-      px(p.x + 4, p.y - 1, 3, "#fff");
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.beginPath(); ctx.ellipse(p.x, p.y + 11, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+      const moving = pointer.current.active || keys.current.size > 0;
+      const py = p.y + (moving ? Math.round(Math.sin(w.elapsed * 12) * 1.5) : 0);
+      const f = p.face;
+      px(p.x + f * 11, py + 1, 3, "#ffd23c"); // 杖（向いてる側）
+      px(p.x + f * 11, py - 6, 3, "#e9dcb8");
+      px(p.x, py + 2, 20, "#4a1f8a");
+      px(p.x, py, 16, "#a06bff");
+      px(p.x, py - 12, 14, "#2a1250"); // 帽子
+      px(p.x, py - 18, 8, "#2a1250");
+      px(p.x - 4 + f * 1.5, py - 1, 3, "#fff"); // 目（向きに寄る）
+      px(p.x + 4 + f * 1.5, py - 1, 3, "#fff");
 
       // ===== 光り物：加算合成 =====
       ctx.globalCompositeOperation = "lighter";
