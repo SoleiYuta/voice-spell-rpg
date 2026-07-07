@@ -109,17 +109,19 @@ export const sfx = {
   playChantStart() {
     tone({ freq: 180, freqTo: 360, dur: 0.22, type: "sine", gain: 0.22 });
   },
-  // 詠唱：送信（呪文発射）。「ファぁーん」＝後ろに向かって膨らむ魔法の解放感。
-  // メジャーコードを遅い attack で後半に山が来るよう膨らませて伸ばす（微デチューンでシマー）＋上昇。
+  // 詠唱：送信（呪文発射）。「ファぁーん」＝低めで幻想的に膨らむ魔法の解放感。
+  // 1オクターブ下げた C4-E4-G4 をサイン波で緩やかに膨らませ、微デチューンでシマー。
   playCast() {
-    // ベース：C5-E5-G5。attack を長めにして「後ろ部分」を強く（山を後半へ）。1.006倍でシマー
-    const chord = [523, 659, 784];
+    // ベース：C4-E4-G4（低め・サインでやわらかく）。長い attack で後半に山（幻想的な膨らみ）
+    const chord = [262, 330, 392];
     chord.forEach((f) => {
-      tone({ freq: f, dur: 0.78, type: "triangle", gain: 0.22, attack: 0.5 });
-      tone({ freq: f * 1.006, dur: 0.78, type: "triangle", gain: 0.14, attack: 0.5 });
+      tone({ freq: f, dur: 0.95, type: "sine", gain: 0.24, attack: 0.55 });
+      tone({ freq: f * 1.007, dur: 0.95, type: "sine", gain: 0.15, attack: 0.55 }); // 微デチューン＝ゆらぎ
     });
-    // ファ→ァと開く上昇の一筆（こちらも後ろへ膨らませる）
-    tone({ freq: 660, freqTo: 1320, dur: 0.6, type: "sine", gain: 0.2, attack: 0.42 });
+    // 上に C5 を薄く重ねて空気感（きらめきではなく持続する倍音）
+    tone({ freq: 523, dur: 0.9, type: "sine", gain: 0.08, attack: 0.6 });
+    // ゆるやかに開く上昇の一筆（こちらも低めに）
+    tone({ freq: 330, freqTo: 660, dur: 0.7, type: "sine", gain: 0.16, attack: 0.45 });
   },
   // 命中（軽い高音チック・throttleで鳴りすぎ防止）
   playHit() {
