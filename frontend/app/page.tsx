@@ -18,6 +18,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import SurvivalMode from "@/components/SurvivalMode";
 import { moodFromMatchRate } from "@/components/PixelGrimoire";
 import { sfx } from "@/lib/sfx";
+import { setMock, isMock } from "@/lib/api";
 
 const CHANT_PHASES = new Set(["presenting", "ready", "recording", "evaluating", "forged"]);
 
@@ -33,9 +34,11 @@ export default function Home() {
   const [debug, setDebug] = useState(false);
   const [dbgElem, setDbgElem] = useState<string>("fire"); // "all" or 単体属性
   const [muted, setMuted] = useState(false); // SE ミュート（初期値は localStorage から同期）
+  const [mockMode, setMockMode] = useState(false); // 声なしテスト用モック
 
   useEffect(() => {
     setMuted(sfx.isMuted());
+    setMockMode(isMock());
   }, []);
 
   // デバッグ装備：単体属性 or 全部（切替で属性ごとに単独で見られる）
@@ -133,19 +136,25 @@ export default function Home() {
           </p>
           <SpellCard spell={state.spell} autoSpeak={state.phase === "ready"} />
           <div style={{ marginTop: 8 }}>
-            <RecordButton
-              recording={state.phase === "recording"}
-              onBegin={() => {
-                setMicError(null);
-                sfx.playChantStart();
-                beginRecord();
-              }}
-              onCast={(blob) => {
-                sfx.playCast();
-                cast(blob);
-              }}
-              onError={setMicError}
-            />
+            {mockMode ? (
+              <button style={btn} onClick={() => { sfx.playCast(); cast(new Blob()); }}>
+                🔮 詠唱（モック・声なし）
+              </button>
+            ) : (
+              <RecordButton
+                recording={state.phase === "recording"}
+                onBegin={() => {
+                  setMicError(null);
+                  sfx.playChantStart();
+                  beginRecord();
+                }}
+                onCast={(blob) => {
+                  sfx.playCast();
+                  cast(blob);
+                }}
+                onError={setMicError}
+              />
+            )}
           </div>
         </div>
       )}
@@ -187,7 +196,23 @@ export default function Home() {
       {state.error && <p style={{ color: "tomato" }}>エラー: {state.error}</p>}
       {micError && <p style={{ color: "tomato" }}>{micError}</p>}
 
-      {state.phase === "title" && <TitleScreen onStart={start} />}
+      {state.phase === "title" && (
+        <>
+          <TitleScreen onStart={() => { setMock(false); setMockMode(false); start(); }} />
+          <div style={{ textAlign: "center", marginTop: 4 }}>
+            <button
+              style={{
+                fontSize: 12, padding: "6px 14px", borderRadius: 6, cursor: "pointer",
+                border: "1px dashed var(--accent)", background: "transparent", color: "var(--accent)",
+                fontFamily: "var(--pixel-font)", opacity: 0.85,
+              }}
+              onClick={() => { setMock(true); setMockMode(true); start(); }}
+            >
+              🧪 声なしでテスト（モック）
+            </button>
+          </div>
+        </>
+      )}
 
       {/* 初回詠唱（まだ戦線に出ていない）→ フルスクリーン */}
       {!state.survivalStarted && isChant && chantUI}
