@@ -28,6 +28,8 @@ const W = 360;
 const H = 520;
 const MAX_LEVEL = 5;
 const BOSS_HP = 4000; // Lv5の最終ボス（黄色巨大スライム）のHP。倒すとクリア。
+const BASE_HP = 43;       // Lv1（1階）の基礎HP
+const FLOOR_HP_MUL = 1.3; // 階が上がるごとの敵HP倍率（30秒=1階ごとに1.3倍）
 
 type Elem = "fire" | "ice" | "thunder" | "dark" | "light" | "wind";
 const ELEM_ALIAS: Record<string, Elem> = {
@@ -260,7 +262,7 @@ export default function SurvivalMode({
       else if (edge === 1) { x = W + 14; y = Math.random() * H; }
       else if (edge === 2) { x = Math.random() * W; y = H + 14; }
       else { x = -14; y = Math.random() * H; }
-      const baseHp = 30 + level * 13 + w.elapsed * 0.8; // 手応え強化（脆すぎ解消・約1.7倍）
+      const baseHp = BASE_HP * Math.pow(FLOOR_HP_MUL, level - 1) + w.elapsed * 0.8; // 階ごとに×1.3（+経過時間で微増）
       const baseSpeed = 40 + level * 4 + Math.random() * 24;
       const roll = Math.random();
       let type = 0, r = 11, hp = baseHp, speed = baseSpeed;
