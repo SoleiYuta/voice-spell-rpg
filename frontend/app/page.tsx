@@ -138,7 +138,7 @@ export default function Home() {
           <div style={{ marginTop: 8 }}>
             {mockMode ? (
               <button style={btn} onClick={() => { sfx.playCast(); cast(new Blob()); }}>
-                🔮 詠唱（モック・声なし）
+                🔮 タップで詠唱
               </button>
             ) : (
               <RecordButton
@@ -208,7 +208,7 @@ export default function Home() {
               }}
               onClick={() => { setMock(true); setMockMode(true); start(); }}
             >
-              🧪 声なしでテスト（モック）
+              🔇 声なしで遊ぶ
             </button>
           </div>
         </>
