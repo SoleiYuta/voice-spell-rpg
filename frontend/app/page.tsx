@@ -19,6 +19,7 @@ import SurvivalMode from "@/components/SurvivalMode";
 import { moodFromMatchRate } from "@/components/PixelGrimoire";
 import { sfx } from "@/lib/sfx";
 import { setMock, isMock } from "@/lib/api";
+import { APP_VERSION } from "@/lib/version";
 
 const CHANT_PHASES = new Set(["presenting", "ready", "recording", "evaluating", "forged"]);
 
@@ -190,6 +191,8 @@ export default function Home() {
       >
         {muted ? "🔇" : "🔊"}
       </button>
+
+      <span style={versionBadge}>v{APP_VERSION}</span>
       <h1 style={{ color: "var(--accent)", fontFamily: "var(--pixel-font)", fontSize: 22, margin: "4px 0 10px" }}>
         AI GRIMOIRE
       </h1>
@@ -288,6 +291,18 @@ const muteBtn: CSSProperties = {
   border: "2px solid var(--accent)",
   borderRadius: 8,
   cursor: "pointer",
+};
+
+// バージョン表記（右下・常時・控えめ）
+const versionBadge: CSSProperties = {
+  position: "fixed",
+  right: 8,
+  bottom: 6,
+  fontSize: 10,
+  opacity: 0.4,
+  fontFamily: "var(--pixel-font)",
+  pointerEvents: "none",
+  zIndex: 5,
 };
 
 const btn: CSSProperties = {

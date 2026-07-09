@@ -71,3 +71,14 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 
 _最終更新: 2026-07-09 01:18 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
+
+## バージョン管理
+
+現在のバージョンは **v1.0.0**（画面右下に常時表示）。単一ソースは `frontend/lib/version.ts` の `APP_VERSION`。
+
+**運用ルール（セマンティックバージョニング）**
+- **PATCH（x.y.Z）**: バグ修正・小さな調整（例: バランス微調整、文言修正）
+- **MINOR（x.Y.0）**: 機能追加（例: 新モード、新演出）
+- **MAJOR（X.0.0）**: 大きな作り替え。**作者（satoryu）の指示があるときのみ**上げる
+
+**更新手順**: 変更をマージする際、`frontend/lib/version.ts` と `frontend/package.json` の version を揃えて上げる。
