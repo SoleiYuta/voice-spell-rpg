@@ -12,7 +12,7 @@
 //    → (最初/復帰) survival
 //  survival → (レベルUP) presenting …（ループ）… / (30秒生存 or HP0) gameResult
 import { useCallback, useReducer } from "react";
-import { evaluate, generateSpell, getResult } from "@/lib/api";
+import { evaluate, generateSpellChoices, getResult } from "@/lib/api";
 import type {
   EvaluationResult,
   FloorLog,
@@ -25,6 +25,7 @@ import type {
 export type GamePhase =
   | "title"
   | "presenting"
+  | "choosing"
   | "ready"
   | "recording"
   | "evaluating"
@@ -67,6 +68,7 @@ export interface GameState {
   phase: GamePhase;
   session_id: string;
   level: number; // 現在の詠唱レベル（1始まり。レベルが上がるほど難呪文）
+  choices: SpellData[]; // 3択の候補呪文（#74）
   spell: SpellData | null;
   last: EvaluationResult | null;
   weapons: Weapon[]; // 鍛造済み武器（=詠唱した魔法）
@@ -81,7 +83,8 @@ export interface GameState {
 type Action =
   | { type: "RESET" }
   | { type: "START"; session_id: string }
-  | { type: "SPELL_LOADED"; spell: SpellData; level: number }
+  | { type: "CHOICES_LOADED"; choices: SpellData[]; level: number }
+  | { type: "CHOOSE_SPELL"; spell: SpellData }
   | { type: "BEGIN_RECORD" }
   | { type: "EVALUATING" }
   | { type: "FORGED"; result: EvaluationResult; weapon: Weapon; floor_log: FloorLog; floorId: string; audioUrl?: string }
@@ -95,6 +98,7 @@ const initialState: GameState = {
   phase: "title",
   session_id: "",
   level: 1,
+  choices: [],
   spell: null,
   last: null,
   weapons: [],
@@ -112,8 +116,10 @@ function reducer(state: GameState, action: Action): GameState {
       return initialState;
     case "START":
       return { ...initialState, phase: "presenting", session_id: action.session_id };
-    case "SPELL_LOADED":
-      return { ...state, phase: "ready", spell: action.spell, level: action.level, last: null };
+    case "CHOICES_LOADED":
+      return { ...state, phase: "choosing", choices: action.choices, level: action.level, last: null };
+    case "CHOOSE_SPELL":
+      return { ...state, phase: "ready", spell: action.spell, choices: [] };
     case "BEGIN_RECORD":
       return { ...state, phase: "recording", error: null };
     case "EVALUATING":
@@ -164,16 +170,16 @@ function buildProfile(history: FloorLog[]): PlayerProfile {
 export function useGame() {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // 呪文を生成して ready へ（レベルが上がるほど難しく＝floor_id にレベルを渡す）
-  const loadSpell = useCallback(
+  // 3つの候補呪文を生成して choosing へ（レベルが上がるほど難しく）
+  const loadChoices = useCallback(
     async (sessionId: string, level: number, history: FloorLog[]) => {
       try {
-        const spell = await generateSpell({
+        const choices = await generateSpellChoices({
           session_id: sessionId,
           floor_id: `floor-${level}`,
           player_profile: buildProfile(history),
         });
-        dispatch({ type: "SPELL_LOADED", spell, level });
+        dispatch({ type: "CHOICES_LOADED", choices, level });
       } catch (e) {
         dispatch({ type: "ERROR", message: e instanceof Error ? e.message : String(e) });
       }
@@ -181,14 +187,17 @@ export function useGame() {
     [],
   );
 
+  // 3択から1つ選ぶ → ready（詠唱へ）
+  const chooseSpell = useCallback((spell: SpellData) => dispatch({ type: "CHOOSE_SPELL", spell }), []);
+
   const start = useCallback(async () => {
     const sessionId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `s-${Date.now()}`;
     dispatch({ type: "START", session_id: sessionId });
-    await loadSpell(sessionId, 1, []);
-  }, [loadSpell]);
+    await loadChoices(sessionId, 1, []);
+  }, [loadChoices]);
 
   const beginRecord = useCallback(() => dispatch({ type: "BEGIN_RECORD" }), []);
 
@@ -242,9 +251,9 @@ export function useGame() {
   const levelUp = useCallback(
     (nextLevel: number) => {
       dispatch({ type: "LEVEL_UP", level: nextLevel });
-      void loadSpell(state.session_id, nextLevel, state.history);
+      void loadChoices(state.session_id, nextLevel, state.history);
     },
-    [loadSpell, state.session_id, state.history],
+    [loadChoices, state.session_id, state.history],
   );
 
   // ヴァンサバ側から：30秒生存 or HP0 → 診断へ
@@ -263,5 +272,5 @@ export function useGame() {
 
   const reset = useCallback(() => dispatch({ type: "RESET" }), []);
 
-  return { state, start, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC };
+  return { state, start, chooseSpell, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC };
 }

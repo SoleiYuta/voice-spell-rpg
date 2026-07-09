@@ -21,7 +21,7 @@ import { sfx } from "@/lib/sfx";
 import { setMock, isMock } from "@/lib/api";
 import { APP_VERSION } from "@/lib/version";
 
-const CHANT_PHASES = new Set(["presenting", "ready", "recording", "evaluating", "forged"]);
+const CHANT_PHASES = new Set(["presenting", "choosing", "ready", "recording", "evaluating", "forged"]);
 
 // デバッグ用の属性一覧（1つずつ選んで単体でエフェクトを確認できる）
 const DEBUG_ELEMS = ["fire", "ice", "thunder", "dark", "light", "wind"] as const;
@@ -29,7 +29,7 @@ const ELEM_JA: Record<string, string> = { fire: "炎", ice: "氷", thunder: "雷
 const DEBUG_CODE = "wwssadadab"; // タイトル画面でこれを打つとデバッグへ
 
 export default function Home() {
-  const { state, start, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC } =
+  const { state, start, chooseSpell, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC } =
     useGame();
   const [micError, setMicError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
@@ -128,6 +128,27 @@ export default function Home() {
     <>
       {state.phase === "presenting" && (
         <LoadingScreen message="魔導書が新たな呪文を授けている" />
+      )}
+
+      {state.phase === "choosing" && state.choices.length > 0 && (
+        <div style={{ textAlign: "center" }}>
+          <p style={{ opacity: 0.85, fontFamily: "var(--pixel-font)", fontSize: 13 }}>
+            {state.survivalStarted ? `⬆ レベル${state.level}・習得する魔法を選べ` : "最初の魔法を選べ"}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 420, margin: "0 auto" }}>
+            {state.choices.map((sp, i) => {
+              const c = colorForSpell(sp.spell_type);
+              return (
+                <button key={i} onClick={() => chooseSpell(sp)} style={{ ...choiceCard, borderColor: c }}>
+                  <div style={{ fontSize: 12, opacity: 0.75 }}>
+                    <span style={{ color: c }}>{sp.spell_type}</span> ・ {"★".repeat(Math.max(1, Math.min(5, sp.difficulty)))}
+                  </div>
+                  <div style={{ fontSize: 16, margin: "4px 0", fontFamily: "var(--pixel-font)" }}>「{sp.spell_text}」</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {(state.phase === "ready" || state.phase === "recording") && state.spell && (
@@ -308,6 +329,18 @@ const versionBadge: CSSProperties = {
   fontFamily: "var(--pixel-font)",
   pointerEvents: "none",
   zIndex: 5,
+};
+
+// 3択の呪文カード
+const choiceCard: CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "2px solid",
+  background: "rgba(10,6,20,0.5)",
+  color: "#fff",
+  cursor: "pointer",
+  textAlign: "center",
+  boxShadow: "2px 2px 0 rgba(0,0,0,0.35)",
 };
 
 const btn: CSSProperties = {

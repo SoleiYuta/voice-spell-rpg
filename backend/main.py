@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import os
+import random
 import time
 from typing import Optional
 
@@ -216,7 +217,7 @@ def _parse_floor(floor_id: str) -> int:
     return int(digits) if digits else 1
 
 
-def generate_spell(profile: Optional[PlayerProfile], floor_num: int) -> dict:
+def generate_spell(profile: Optional[PlayerProfile], floor_num: int, force_type: Optional[str] = None) -> dict:
     if profile:
         vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(
             profile.avg_volume, profile.avg_volume
@@ -239,7 +240,7 @@ def generate_spell(profile: Optional[PlayerProfile], floor_num: int) -> dict:
 - プレイヤーの傾向に合わせる：苦手を少しだけ克服させ、得意が活きる内容・難易度にする（傾向不明なら標準）
 - フロアが進むほど難しく（長め・発音難）
 - 声に出して詠唱したくなる、厨二病で格好いい日本語の呪文（1〜2文・40字以内目安）
-- difficulty は 1〜5（フロア{floor_num}相当）、spell_type は {"/".join(SPELL_TYPES)} のいずれか
+- difficulty は 1〜5（フロア{floor_num}相当）、spell_type は {("必ず「" + force_type + "」に固定") if force_type else (("/".join(SPELL_TYPES)) + " のいずれか")}
 - expected_length_sec は詠唱想定秒数（1.5〜6.0）
 
 JSON で spell_text, difficulty, spell_type, expected_length_sec を返せ。"""
@@ -254,10 +255,11 @@ JSON で spell_text, difficulty, spell_type, expected_length_sec を返せ。"""
             ),
         )
         data = json.loads(response.text)
+        stype = force_type if force_type in SPELL_TYPES else (data.get("spell_type") if data.get("spell_type") in SPELL_TYPES else "fire")
         return {
             "spell_text": str(data.get("spell_text") or FALLBACK_SPELL["spell_text"]).strip(),
             "difficulty": max(1, min(5, int(data.get("difficulty", 2)))),
-            "spell_type": data.get("spell_type") if data.get("spell_type") in SPELL_TYPES else "fire",
+            "spell_type": stype,
             "expected_length_sec": round(max(1.0, min(8.0, float(data.get("expected_length_sec", 3.0)))), 1),
         }
     except Exception as e:
@@ -275,6 +277,21 @@ async def generate_spell_endpoint(req: GenerateSpellRequest):
     )
     logger.info(f"[timing] generate-spell={time.time()-t0:.2f}s floor={floor_num}")
     return spell
+
+
+@app.post("/generate-spell-choices")
+async def generate_spell_choices_endpoint(req: GenerateSpellRequest):
+    """3択用に、属性の異なる呪文を3つ生成（並列）。#74 アーチャー伝説風。"""
+    t0 = time.time()
+    floor_num = _parse_floor(req.floor_id)
+    types3 = random.sample(SPELL_TYPES, 3)  # 6属性から3つ重複なし
+    loop = asyncio.get_event_loop()
+    spells = await asyncio.gather(*[
+        loop.run_in_executor(None, (lambda ft: lambda: generate_spell(req.player_profile, floor_num, force_type=ft))(t))
+        for t in types3
+    ])
+    logger.info(f"[timing] generate-spell-choices={time.time()-t0:.2f}s floor={floor_num}")
+    return {"spells": spells}
 
 
 # ===== /result（リザルト診断）=====

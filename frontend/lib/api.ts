@@ -62,6 +62,28 @@ export async function generateSpell(args: {
   return res.json();
 }
 
+// 3択用：属性の異なる呪文を3つ生成（#74 アーチャー伝説風）。
+export async function generateSpellChoices(args: {
+  session_id?: string;
+  floor_id?: string;
+  player_profile?: PlayerProfile;
+}): Promise<SpellData[]> {
+  if (isMock()) {
+    await wait(500);
+    const n = mockFloorNum(args.floor_id);
+    const picks = [MOCK_ELEMS[(n - 1) % 6], MOCK_ELEMS[n % 6], MOCK_ELEMS[(n + 1) % 6]];
+    return picks.map((el) => ({ spell_text: MOCK_SPELL_TEXT[el], difficulty: Math.min(5, n), spell_type: el, expected_length_sec: 3 }));
+  }
+  const res = await fetch(`${BASE}/generate-spell-choices`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) throw new Error(`generate-spell-choices failed: ${res.status}`);
+  const data = await res.json();
+  return ((data && data.spells) || []).slice(0, 3);
+}
+
 // 録音(webm Blob)を送って詠唱を評価。録音は lib/audio.ts（#22）で取得する。
 export async function evaluate(args: {
   audio: Blob;
