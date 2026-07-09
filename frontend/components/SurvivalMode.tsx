@@ -602,7 +602,7 @@ export default function SurvivalMode({
         if (gd < w.player.r + 5) { g.collected = true; w.xp += 1; }
       }
       w.gems = w.gems.filter((g) => !g.collected);
-      if (!debugRef.current && w.xp >= w.xpNext) { internalPaused.current = true; setCards(rollCards()); }
+      if (!debugRef.current && w.xp >= w.xpNext) { internalPaused.current = true; w.shake = 0; setCards(rollCards()); }
 
       // 視覚エフェクト更新
       updateFX(w, dt);
@@ -634,7 +634,10 @@ export default function SurvivalMode({
       ctx.fillRect(0, 0, W, H);
 
       ctx.save();
-      if (w.shake > 0.1) ctx.translate((Math.random() - 0.5) * w.shake, (Math.random() - 0.5) * w.shake);
+      // 一時停止中(カード選択/レベルUP詠唱)はshakeが減衰されないため、揺れを適用しない（#73 ブルブル修正）
+      if (w.shake > 0.1 && !pausedRef.current && !internalPaused.current) {
+        ctx.translate((Math.random() - 0.5) * w.shake, (Math.random() - 0.5) * w.shake);
+      }
 
       ctx.strokeStyle = "rgba(160,107,255,0.07)"; ctx.lineWidth = 1;
       for (let gx = 0; gx <= W; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
