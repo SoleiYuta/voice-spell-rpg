@@ -268,7 +268,12 @@ export default function Home() {
           >
             {state.outcome === "victory" ? "🏆 全レベル制覇！" : `💀 レベル${state.level}で力尽きた……`}
           </p>
-          <ResultScreen key={state.result.session_id} result={state.result} onRestart={reset} />
+          <ResultScreen
+            key={state.result.session_id}
+            result={state.result}
+            onRestart={reset}
+            bestRecordingUrl={state.recordings[state.result.best_floor.floor_id]}
+          />
         </>
       )}
     </main>

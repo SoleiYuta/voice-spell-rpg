@@ -74,6 +74,7 @@ export interface GameState {
   survivalStarted: boolean; // 一度でも戦線に出たか
   outcome: "victory" | "defeat" | null;
   result: ResultData | null;
+  recordings: Record<string, string>; // floor_id → 録音のObjectURL（ベスト詠唱の再生用・#80）
   error: string | null;
 }
 
@@ -83,7 +84,7 @@ type Action =
   | { type: "SPELL_LOADED"; spell: SpellData; level: number }
   | { type: "BEGIN_RECORD" }
   | { type: "EVALUATING" }
-  | { type: "FORGED"; result: EvaluationResult; weapon: Weapon; floor_log: FloorLog }
+  | { type: "FORGED"; result: EvaluationResult; weapon: Weapon; floor_log: FloorLog; floorId: string; audioUrl?: string }
   | { type: "ENTER_SURVIVAL" }
   | { type: "LEVEL_UP"; level: number }
   | { type: "FINISH"; outcome: "victory" | "defeat" }
@@ -101,6 +102,7 @@ const initialState: GameState = {
   survivalStarted: false,
   outcome: null,
   result: null,
+  recordings: {},
   error: null,
 };
 
@@ -123,6 +125,9 @@ function reducer(state: GameState, action: Action): GameState {
         last: action.result,
         weapons: [...state.weapons, action.weapon],
         history: [...state.history, action.floor_log],
+        recordings: action.audioUrl
+          ? { ...state.recordings, [action.floorId]: action.audioUrl }
+          : state.recordings,
       };
     case "ENTER_SURVIVAL":
       return { ...state, phase: "survival", survivalStarted: true };
@@ -191,6 +196,11 @@ export function useGame() {
   const cast = useCallback(
     async (audio: Blob) => {
       if (!state.spell) return;
+      // 録音を保持（ベスト詠唱の再生用）。声なし(mock)は空Blobなのでスキップ。
+      const audioUrl =
+        audio && audio.size > 0 && typeof URL !== "undefined" && "createObjectURL" in URL
+          ? URL.createObjectURL(audio)
+          : undefined;
       dispatch({ type: "EVALUATING" });
       try {
         const result = await evaluate({
@@ -217,7 +227,7 @@ export function useGame() {
           damage: damageFromPower(result.spell_power),
           color: colorForSpell(state.spell.spell_type),
         };
-        dispatch({ type: "FORGED", result, weapon, floor_log });
+        dispatch({ type: "FORGED", result, weapon, floor_log, floorId: `floor-${state.level}`, audioUrl });
       } catch (e) {
         dispatch({ type: "ERROR", message: e instanceof Error ? e.message : String(e) });
       }

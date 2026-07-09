@@ -22,6 +22,8 @@ export interface ResultScreenProps {
   onRestart?: () => void;
   /** 魔導書の A/B バリアント。省略時は内部でランダム選択。 */
   variant?: GrimoireVariant | "random";
+  /** ベスト詠唱の録音URL（#80）。あれば再生プレイヤーを表示。 */
+  bestRecordingUrl?: string;
 }
 
 function toPct(v: number): number {
@@ -40,7 +42,7 @@ function SegBar({ ratio }: { ratio: number }) {
   );
 }
 
-export default function ResultScreen({ result, onRestart, variant = "random" }: ResultScreenProps) {
+export default function ResultScreen({ result, onRestart, variant = "random", bestRecordingUrl }: ResultScreenProps) {
   const matchPct = toPct(result.stats.avg_match_rate);
   const mood = moodFromMatchRate(result.stats.avg_match_rate);
   const persona = result.vtuber_persona;
@@ -119,6 +121,12 @@ export default function ResultScreen({ result, onRestart, variant = "random" }: 
           <span className={styles.bestPowerLabel}>威力</span>
           <span className={styles.bestPowerValue}>{Math.round(result.best_floor.spell_power)}</span>
         </div>
+        {bestRecordingUrl && (
+          <div style={{ marginTop: 10, textAlign: "center" }}>
+            <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4, fontFamily: "var(--pixel-font)" }}>🔊 この詠唱を聴く</div>
+            <audio src={bestRecordingUrl} controls style={{ width: "100%", maxWidth: 300, height: 34 }} />
+          </div>
+        )}
       </div>
 
       {/* 統計 */}
