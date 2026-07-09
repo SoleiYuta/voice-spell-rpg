@@ -254,7 +254,7 @@ export default function SurvivalMode({
       else if (edge === 1) { x = W + 14; y = Math.random() * H; }
       else if (edge === 2) { x = Math.random() * W; y = H + 14; }
       else { x = -14; y = Math.random() * H; }
-      const baseHp = 16 + level * 8 + w.elapsed * 0.5;
+      const baseHp = 30 + level * 13 + w.elapsed * 0.8; // 手応え強化（脆すぎ解消・約1.7倍）
       const baseSpeed = 40 + level * 4 + Math.random() * 24;
       const roll = Math.random();
       let type = 0, r = 11, hp = baseHp, speed = baseSpeed;
