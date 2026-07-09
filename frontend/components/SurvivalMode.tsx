@@ -27,6 +27,7 @@ export interface SurvivalModeProps {
 const W = 360;
 const H = 520;
 const MAX_LEVEL = 5;
+const BOSS_HP = 4000; // Lv5の最終ボス（黄色巨大スライム）のHP。倒すとクリア。
 
 type Elem = "fire" | "ice" | "thunder" | "dark" | "light" | "wind";
 const ELEM_ALIAS: Record<string, Elem> = {
@@ -76,7 +77,7 @@ const FLAME = [
   "..RRRRR..",
 ];
 
-interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; flash: number; type: number; }
+interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; flash: number; type: number; boss?: boolean; stompCd?: number; stompPhase?: number; sx?: number; sy?: number; sT?: number; }
 interface Shot { x: number; y: number; vx: number; vy: number; dmg: number; el: Elem; life: number; hit: Set<Enemy>; }
 interface DamageText { x: number; y: number; vy: number; life: number; max: number; text: string; color: string; } // 命中ダメージ数字
 interface Ring { x: number; y: number; r: number; life: number; max: number; color: string; } // 撃破の弾けリング
@@ -109,6 +110,9 @@ interface World {
   dmgMul: number;   // 威力倍率
   fireMul: number;  // 発射間隔倍率(小さいほど速い)
   spdMul: number;   // 移動速度倍率
+  boss: Enemy | null;   // Lv5ボス（enemies[]にも入れて全武器で殴れる）
+  bossPhase: boolean;   // ボス戦中
+  victoryT: number;     // 勝利演出タイマー(>0の間はエフェクトだけ流す)
   kills: number;
   elapsed: number;
   spawnTimer: number;
@@ -184,6 +188,7 @@ export default function SurvivalMode({
         w.elapsed = 0;
         w.enemies = []; w.shots = []; w.iceFalls = []; w.holes = []; w.beams = []; w.tornados = []; w.flames = [];
         w.damageTexts = []; w.rings = []; w.gems = []; // 強化(xp/倍率)はラウンド跨ぎで保持、ジェムだけ掃除
+        w.boss = null; w.bossPhase = false; w.victoryT = 0;
         w.spawnTimer = 0;
         w.awaitingLevel = false;
         w.player.hp = w.player.maxHp;
@@ -205,6 +210,7 @@ export default function SurvivalMode({
       enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [], flames: [],
       damageTexts: [], rings: [], gems: [],
       xp: 0, xpNext: 5, plevel: 0, dmgMul: 1, fireMul: 1, spdMul: 1,
+      boss: null, bossPhase: false, victoryT: 0,
       kills: 0, elapsed: 0, spawnTimer: 0, fireAt: {},
       awaitingLevel: false, shake: 0, hurt: 0, flash: 1, flashEl: toElem(weapons[0]?.spell_type),
       finished: false,
@@ -263,6 +269,30 @@ export default function SurvivalMode({
       w.enemies.push({ x, y, hp, maxHp: hp, r, speed, flash: 0, type });
     };
 
+    const spawnBoss = (w: World) => {
+      const b: Enemy = {
+        x: W / 2, y: -40, hp: BOSS_HP, maxHp: BOSS_HP, r: 40, speed: 30, flash: 0, type: 3,
+        boss: true, stompCd: 2.2, stompPhase: 0, sx: 0, sy: 0, sT: 0,
+      };
+      w.boss = b; w.enemies.push(b);
+      w.flash = 1; w.flashEl = "light"; w.shake = 10;
+    };
+
+    // 視覚エフェクトの更新（通常stepの末尾と勝利演出中の両方で使う）
+    const updateFX = (w: World, dt: number) => {
+      for (const pt of w.particles) { pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vx *= 0.9; pt.vy *= 0.9; pt.life -= dt; }
+      w.particles = w.particles.filter((p) => p.life > 0);
+      for (const b of w.bolts) b.life -= dt;
+      w.bolts = w.bolts.filter((b) => b.life > 0);
+      for (const d of w.damageTexts) { d.y += d.vy * dt; d.vy *= 0.9; d.life -= dt; }
+      w.damageTexts = w.damageTexts.filter((d) => d.life > 0);
+      for (const rg of w.rings) { rg.r += 130 * dt; rg.life -= dt; }
+      w.rings = w.rings.filter((rg) => rg.life > 0);
+      w.shake = Math.max(0, w.shake - 26 * dt);
+      w.hurt = Math.max(0, w.hurt - 2 * dt);
+      w.flash = Math.max(0, w.flash - 2 * dt);
+    };
+
     const burst = (w: World, x: number, y: number, el: Elem, n: number, speed: number) => {
       const pal = PALETTE[el];
       for (let i = 0; i < n; i++) {
@@ -300,10 +330,12 @@ export default function SurvivalMode({
       e.flash = 0.1; // 被弾で白フラッシュ
       // ダメージ数字（敵の上に浮いて消える）
       w.damageTexts.push({ x: e.x, y: e.y - e.r - 2, vy: -34, life: 0.6, max: 0.6, text: String(Math.round(dmg)), color: PALETTE[el][0] });
-      // ノックバック（発生源から外向き。既定はプレイヤー方向）
-      const sx = fromX ?? w.player.x, sy = fromY ?? w.player.y;
-      const kx = e.x - sx, ky = e.y - sy, kd = Math.hypot(kx, ky) || 1;
-      e.x += (kx / kd) * 6; e.y += (ky / kd) * 6;
+      // ノックバック（発生源から外向き。既定はプレイヤー方向）。ボスは動じない。
+      if (!e.boss) {
+        const sx = fromX ?? w.player.x, sy = fromY ?? w.player.y;
+        const kx = e.x - sx, ky = e.y - sy, kd = Math.hypot(kx, ky) || 1;
+        e.x += (kx / kd) * 6; e.y += (ky / kd) * 6;
+      }
       burst(w, e.x, e.y, el, 6, 130);
       if (e.hp <= 0) {
         w.kills += 1;
@@ -322,13 +354,21 @@ export default function SurvivalMode({
       w.elapsed += dt;
       const kills0 = w.kills; // このフレームで撃破が増えたら効果音（throttle済み）
 
-      if (!debugRef.current && !w.finished && w.player.hp <= 0) { w.finished = true; onFinishRef.current("defeat"); return; }
-      if (!debugRef.current && !w.finished && w.elapsed >= durRef.current) {
-        if (!w.awaitingLevel) {
-          if (level < MAX_LEVEL) { w.awaitingLevel = true; onLevelUpRef.current(level + 1); }
-          else { w.finished = true; onFinishRef.current("victory"); }
-        }
+      // 勝利演出中：エフェクトだけ流して、終わったら onFinish("victory")
+      if (w.victoryT > 0) {
+        w.victoryT -= dt;
+        if (Math.random() < 0.7) burst(w, Math.random() * W, Math.random() * H, (["fire", "light", "thunder", "ice", "wind", "dark"] as Elem[])[Math.floor(Math.random() * 6)], 12, 300);
+        updateFX(w, dt);
+        if (w.victoryT <= 0 && !w.finished) { w.finished = true; onFinishRef.current("victory"); }
         return;
+      }
+
+      if (!debugRef.current && !w.finished && w.player.hp <= 0) { w.finished = true; onFinishRef.current("defeat"); return; }
+      if (!debugRef.current && !w.finished && !w.bossPhase && w.elapsed >= durRef.current) {
+        if (!w.awaitingLevel) {
+          if (level < MAX_LEVEL) { w.awaitingLevel = true; onLevelUpRef.current(level + 1); return; }
+          w.bossPhase = true; spawnBoss(w); // Lv5: ボス出現。以降は通常stepを継続し、撃破で勝利
+        }
       }
 
       // 移動
@@ -353,15 +393,38 @@ export default function SurvivalMode({
       // 湧き密度をレベル連動で増加（Lv1≒2倍 → Lv5≒4倍）。序盤はフェア、最終ラウンドで大群。上限240体。
       const spawnMul = Math.min(4, 2 + (level - 1) * 0.5);
       const spawnInterval = Math.max(0.08, (1.2 - level * 0.1 - w.elapsed * 0.02) / spawnMul);
-      if (w.spawnTimer <= 0 && w.enemies.length < 240) { spawnEnemy(w, level); w.spawnTimer = spawnInterval; }
+      if (w.spawnTimer <= 0 && w.enemies.length < 240 && !w.bossPhase) { spawnEnemy(w, level); w.spawnTimer = spawnInterval; }
 
       // 敵移動＆接触
       for (const e of w.enemies) {
+        if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
+        if (e.boss) continue; // ボスは専用ロジックで動かす
         const ex = w.player.x - e.x, ey = w.player.y - e.y;
         const d = Math.hypot(ex, ey) || 1;
         e.x += (ex / d) * e.speed * dt; e.y += (ey / d) * e.speed * dt;
-        if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
         if (d < e.r + w.player.r) { if (!debugRef.current) { w.player.hp -= 16 * dt; w.hurt = Math.min(1, w.hurt + 3 * dt); } w.shake = Math.min(8, w.shake + 16 * dt); }
+      }
+
+      // ボス（黄色巨大スライム）：ゆっくり接近＋踏みつけ攻撃
+      if (w.boss && w.boss.hp > 0) {
+        const b = w.boss;
+        if (b.stompPhase === 1) {
+          // 溜め（動かない）→ 着地でAoE
+          b.sT = (b.sT ?? 0) - dt;
+          if ((b.sT ?? 0) <= 0) {
+            const hit = Math.hypot(w.player.x - (b.sx ?? 0), w.player.y - (b.sy ?? 0)) < 66 + w.player.r;
+            if (hit && !debugRef.current) { w.player.hp -= 34; w.hurt = 1; }
+            w.shake = Math.min(12, w.shake + 11);
+            burst(w, b.sx ?? 0, b.sy ?? 0, "light", 30, 300); // 着地の衝撃波
+            w.rings.push({ x: b.sx ?? 0, y: b.sy ?? 0, r: 12, life: 0.4, max: 0.4, color: "#ffd54f" });
+            b.stompPhase = 0; b.stompCd = 2.3;
+          }
+        } else {
+          const ex = w.player.x - b.x, ey = w.player.y - b.y, d = Math.hypot(ex, ey) || 1;
+          b.x += (ex / d) * b.speed * dt; b.y += (ey / d) * b.speed * dt;
+          b.stompCd = (b.stompCd ?? 0) - dt;
+          if ((b.stompCd ?? 0) <= 0) { b.stompPhase = 1; b.sx = w.player.x; b.sy = w.player.y; b.sT = 0.7; } // プレイヤー位置を狙って溜め
+        }
       }
 
       // 自動攻撃（属性ごとに挙動が違う）
@@ -519,6 +582,17 @@ export default function SurvivalMode({
       // 死亡敵の一括除去
       w.enemies = w.enemies.filter((e) => e.hp > 0);
 
+      // ボス撃破 → クリア（大量エフェクト演出へ）
+      if (w.bossPhase && w.boss && w.boss.hp <= 0 && w.victoryT <= 0 && !w.finished) {
+        const bx = w.boss.x, by = w.boss.y;
+        w.enemies = w.enemies.filter((e) => !e.boss);
+        for (let k = 0; k < 10; k++) burst(w, bx + (Math.random() - 0.5) * 100, by + (Math.random() - 0.5) * 100, (["fire", "light", "thunder", "ice"] as Elem[])[k % 4], 26, 340);
+        for (let k = 0; k < 7; k++) w.rings.push({ x: bx, y: by, r: 8 + k * 12, life: 0.8, max: 0.8, color: "#ffd54f" });
+        w.shake = 12; w.flash = 1; w.flashEl = "light";
+        w.victoryT = 1.4; // この間、追加エフェクトを撒いてから勝利
+        w.boss = null;
+      }
+
       // XPジェム：近づくと吸引→回収でXP。しきい値でカード選択へ
       for (const g of w.gems) {
         const gx = w.player.x - g.x, gy = w.player.y - g.y, gd = Math.hypot(gx, gy) || 1;
@@ -528,19 +602,8 @@ export default function SurvivalMode({
       w.gems = w.gems.filter((g) => !g.collected);
       if (!debugRef.current && w.xp >= w.xpNext) { internalPaused.current = true; setCards(rollCards()); }
 
-      // 更新
-      for (const pt of w.particles) { pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vx *= 0.9; pt.vy *= 0.9; pt.life -= dt; }
-      w.particles = w.particles.filter((p) => p.life > 0);
-      for (const b of w.bolts) b.life -= dt;
-      w.bolts = w.bolts.filter((b) => b.life > 0);
-      // ダメージ数字（浮上＆減速）と撃破リング（拡大）
-      for (const d of w.damageTexts) { d.y += d.vy * dt; d.vy *= 0.9; d.life -= dt; }
-      w.damageTexts = w.damageTexts.filter((d) => d.life > 0);
-      for (const rg of w.rings) { rg.r += 130 * dt; rg.life -= dt; }
-      w.rings = w.rings.filter((rg) => rg.life > 0);
-      w.shake = Math.max(0, w.shake - 26 * dt);
-      w.hurt = Math.max(0, w.hurt - 2 * dt);
-      w.flash = Math.max(0, w.flash - 2 * dt);
+      // 視覚エフェクト更新
+      updateFX(w, dt);
     };
 
     // 炎ドット絵（火弾＝(cx,cy) を中心に描画）
@@ -586,6 +649,28 @@ export default function SurvivalMode({
 
       // 敵（タイプ別の色・影・歩行の上下ボブ）
       for (const e of w.enemies) {
+        if (e.boss) {
+          // 黄色巨大スライム（ぷるん）＋踏みつけ予告
+          ctx.fillStyle = "rgba(0,0,0,0.35)";
+          ctx.beginPath(); ctx.ellipse(e.x, e.y + e.r * 0.7, e.r * 0.9, e.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+          const wob = Math.sin(w.elapsed * 4) * 3;
+          ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#c8961e";
+          ctx.beginPath(); ctx.ellipse(e.x, e.y + e.r * 0.15, e.r + wob, e.r * 0.9, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#ffd54f";
+          ctx.beginPath(); ctx.ellipse(e.x, e.y, e.r - 3 + wob, e.r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.5)";
+          ctx.beginPath(); ctx.ellipse(e.x - e.r * 0.35, e.y - e.r * 0.3, e.r * 0.22, e.r * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#3a2a00";
+          ctx.beginPath(); ctx.arc(e.x - e.r * 0.3, e.y - e.r * 0.05, 4, 0, Math.PI * 2); ctx.arc(e.x + e.r * 0.3, e.y - e.r * 0.05, 4, 0, Math.PI * 2); ctx.fill();
+          if (e.stompPhase === 1) {
+            const prog = 1 - (e.sT ?? 0) / 0.7;
+            ctx.strokeStyle = "rgba(255,80,80,0.9)"; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(e.sx ?? 0, e.sy ?? 0, 66, 0, Math.PI * 2); ctx.stroke();
+            ctx.fillStyle = `rgba(255,120,60,${0.15 + 0.3 * prog})`;
+            ctx.beginPath(); ctx.arc(e.sx ?? 0, e.sy ?? 0, 66 * prog, 0, Math.PI * 2); ctx.fill();
+          }
+          continue;
+        }
         // 影
         ctx.fillStyle = "rgba(0,0,0,0.3)";
         ctx.beginPath(); ctx.ellipse(e.x, e.y + e.r * 0.85, e.r * 0.8, e.r * 0.32, 0, 0, Math.PI * 2); ctx.fill();
@@ -763,7 +848,16 @@ export default function SurvivalMode({
         }
       }
 
-      if (debugRef.current) { ctx.textAlign = "left"; ctx.font = "11px monospace"; ctx.fillStyle = "#5ce08a"; ctx.fillText("DEBUG (無敵)", 8, 52); }
+      // ボスHPバー
+      if (w.boss && w.boss.hp > 0) {
+        const bw = W - 40, bx = 20, by = 44;
+        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(bx, by, bw, 9);
+        ctx.fillStyle = "#ffd54f"; ctx.fillRect(bx, by, bw * Math.max(0, w.boss.hp / w.boss.maxHp), 9);
+        ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 9);
+        ctx.fillStyle = "#ffd54f"; ctx.font = "bold 10px monospace"; ctx.textAlign = "center"; ctx.fillText("👑 BOSS", W / 2, by - 2);
+      }
+
+      if (debugRef.current) { ctx.textAlign = "left"; ctx.font = "11px monospace"; ctx.fillStyle = "#5ce08a"; ctx.fillText("DEBUG (無敵)", 8, 62); }
 
       if (pausedRef.current) { ctx.fillStyle = "rgba(10,6,20,0.55)"; ctx.fillRect(0, 0, W, H); }
     };
