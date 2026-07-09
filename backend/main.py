@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import json
 import logging
@@ -40,6 +41,13 @@ gemini_client = genai.Client(
     project="voicespellrpg",
     location="asia-northeast1",
 )
+# 画像生成(gemini-2.5-flash-image)は asia-northeast1 に無いため global で叩く
+image_client = genai.Client(
+    vertexai=True,
+    project="voicespellrpg",
+    location="global",
+)
+IMAGE_MODEL = "gemini-2.5-flash-image"
 
 SPELL_TYPES = ["fire", "ice", "thunder", "dark", "light", "wind"]
 FALLBACK_SPELL = {
@@ -478,3 +486,41 @@ async def result_endpoint(req: ResultRequest):
         "stats": stats,
         **persona,
     }
+
+
+# ===== 立ち絵の実画像生成（VTuberキャラ提案の portrait_prompt から）=====
+class ImageRequest(BaseModel):
+    prompt: str = ""
+
+
+def _gen_image(prompt: str) -> Optional[str]:
+    """gemini-2.5-flash-image で画像生成し data URL(base64) で返す。失敗時 None。"""
+    res = image_client.models.generate_content(
+        model=IMAGE_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+    )
+    for cand in (res.candidates or []):
+        for p in (cand.content.parts or []):
+            inline = getattr(p, "inline_data", None)
+            if inline and inline.data:
+                b64 = base64.b64encode(inline.data).decode()
+                return f"data:{inline.mime_type};base64,{b64}"
+    return None
+
+
+@app.post("/generate-image")
+async def generate_image_endpoint(req: ImageRequest):
+    if not req.prompt.strip():
+        return {"image": None, "error": "empty prompt"}
+    loop = asyncio.get_event_loop()
+    t0 = time.time()
+    try:
+        # アニメ調の立ち絵になるよう軽く方向づけ
+        prompt = f"anime-style character portrait, full body, clean background. {req.prompt}"
+        img = await loop.run_in_executor(None, lambda: _gen_image(prompt))
+        logger.info(f"[timing] generate-image={time.time()-t0:.2f}s ok={bool(img)}")
+        return {"image": img, "error": None if img else "no image"}
+    except Exception as e:
+        logger.warning(f"generate-image error: {e}")
+        return {"image": None, "error": "generation failed"}

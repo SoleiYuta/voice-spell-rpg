@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import type { CSSProperties } from "react";
+import { generateImage } from "@/lib/api";
 import GMComment from "./GMComment";
 import { moodFromMatchRate, pickGrimoireVariant, type GrimoireVariant } from "./PixelGrimoire";
 import type { ResultData, Volume } from "@/lib/types";
@@ -52,6 +53,18 @@ export default function ResultScreen({ result, onRestart, variant = "random" }: 
       .catch(() => {});
   };
 
+  // 立ち絵の実画像生成
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const [imgLoading, setImgLoading] = useState(false);
+  const [imgErr, setImgErr] = useState(false);
+  const genImage = async () => {
+    if (!persona?.portrait_prompt || imgLoading) return;
+    setImgLoading(true); setImgErr(false);
+    const url = await generateImage(persona.portrait_prompt);
+    if (url) setImgUrl(url); else setImgErr(true);
+    setImgLoading(false);
+  };
+
   return (
     <div className={styles.screen}>
       {/* 診断タイプ見出し */}
@@ -78,9 +91,18 @@ export default function ResultScreen({ result, onRestart, variant = "random" }: 
               <div style={vt.catch}>&ldquo;{persona.catchphrase}&rdquo;</div>
               <p style={vt.setting}>{persona.character_setting}</p>
               {persona.portrait_prompt && (
-                <button style={vt.copyBtn} onClick={copyPrompt}>
-                  {copied ? "✓ コピーしました" : "🎨 立ち絵プロンプトをコピー"}
-                </button>
+                <>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 4 }}>
+                    <button style={vt.genBtn} onClick={genImage} disabled={imgLoading}>
+                      {imgLoading ? "🎨 生成中…(10秒ほど)" : imgUrl ? "🔄 もう一度生成" : "🎨 立ち絵を生成"}
+                    </button>
+                    <button style={vt.copyBtn} onClick={copyPrompt}>
+                      {copied ? "✓ コピー済み" : "📋 プロンプト"}
+                    </button>
+                  </div>
+                  {imgUrl && <img src={imgUrl} alt="VTuber立ち絵" style={vt.img} />}
+                  {imgErr && <p style={vt.imgErr}>画像生成に失敗しました。もう一度お試しください。</p>}
+                </>
               )}
             </div>
           )}
@@ -165,6 +187,17 @@ const vt: Record<string, CSSProperties> = {
     border: "1px solid var(--accent)", background: "transparent", color: "var(--accent)",
     fontFamily: "var(--pixel-font)",
   },
+  genBtn: {
+    fontSize: 12, padding: "8px 14px", borderRadius: 8, cursor: "pointer",
+    border: "none", background: "var(--accent)", color: "#fff",
+    fontFamily: "var(--pixel-font)", boxShadow: "2px 2px 0 rgba(0,0,0,0.4)",
+  },
+  img: {
+    display: "block", width: "100%", maxWidth: 300, margin: "12px auto 0",
+    borderRadius: 10, border: "2px solid var(--accent)",
+    boxShadow: "0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent)",
+  },
+  imgErr: { fontSize: 12, color: "tomato", marginTop: 10 },
   tip: { fontSize: 13, opacity: 0.85, margin: "12px auto 0", maxWidth: 420, lineHeight: 1.5 },
 };
 

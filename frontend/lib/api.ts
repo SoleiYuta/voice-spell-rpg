@@ -130,3 +130,21 @@ export async function getResult(args: {
   if (!res.ok) throw new Error(`result failed: ${res.status}`);
   return res.json();
 }
+
+// VTuber立ち絵の実画像生成（portrait_prompt → data URL）。失敗時 null。
+// ※声なし(mock)でも実画像は出したいので mock ゲートはしない。
+export async function generateImage(prompt: string): Promise<string | null> {
+  if (!prompt) return null;
+  try {
+    const res = await fetch(`${BASE}/generate-image`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data && data.image) || null;
+  } catch {
+    return null;
+  }
+}
