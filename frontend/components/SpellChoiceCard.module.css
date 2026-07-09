@@ -1,0 +1,247 @@
+/* 3択の呪文カード（属性ごとの派手エフェクト付き）。#71 / 担当: satoryudev
+   炎=メラメラ / 雷=バリバリ / 氷=ザザッ落下 / 闇=渦 / 光=放射 / 風=旋風。
+   カードの枠色は useGame.colorForSpell と揃える（--el を inline で受け取る）。 */
+
+.card {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 66px;
+  padding: 12px 14px;
+  border: 2px solid var(--el, var(--accent));
+  border-radius: 10px;
+  background: #0a0512;
+  color: #fff;
+  cursor: pointer;
+  overflow: hidden;
+  font-family: var(--pixel-font);
+  box-shadow: 0 0 14px -3px var(--el, var(--accent)), inset 0 0 22px -10px var(--el, var(--accent));
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 20px -2px var(--el, var(--accent)), inset 0 0 26px -8px var(--el, var(--accent));
+}
+.card:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.fx {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.body {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+.icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.txt {
+  flex: 1;
+  min-width: 0;
+}
+.label {
+  display: block;
+  font-size: 11px;
+  opacity: 0.8;
+}
+.label b {
+  color: var(--el, var(--accent));
+}
+.spell {
+  display: block;
+  font-size: 15px;
+  line-height: 1.4;
+  margin-top: 2px;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* ===== 炎：立ち昇る炎＋火の粉 ===== */
+.flame {
+  position: absolute;
+  bottom: -8px;
+  width: 24px;
+  border-radius: 50% 50% 45% 45%;
+  background: linear-gradient(to top, #ffd27a, #ff8c1a 40%, #ff3b1a 72%, transparent 92%);
+  filter: blur(1px);
+  transform-origin: bottom;
+  opacity: 0.9;
+  animation: flick 0.5s ease-in-out infinite alternate;
+}
+@keyframes flick {
+  0% { transform: scaleY(0.8) scaleX(1.05) translateX(-1px); }
+  100% { transform: scaleY(1.3) scaleX(0.9) translateX(1px); }
+}
+.emb {
+  position: absolute;
+  bottom: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ffb347;
+  box-shadow: 0 0 6px #ff8c1a;
+  animation: embup 1.6s linear infinite;
+}
+@keyframes embup {
+  0% { transform: translateY(0); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateY(-60px) translateX(8px); opacity: 0; }
+}
+
+/* ===== 雷：稲妻フラッシュ ===== */
+.bolt {
+  position: absolute;
+  inset: 0;
+  display: block;
+  opacity: 0;
+  animation: zap 2.4s steps(1) infinite;
+}
+.bolt svg { width: 100%; height: 100%; display: block; }
+.bolt polyline {
+  stroke: #fff2a8;
+  stroke-width: 2.5;
+  fill: none;
+  filter: drop-shadow(0 0 6px #ffd54f);
+}
+.zapflash {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: radial-gradient(circle at 55% 40%, rgba(255, 242, 168, 0.5), transparent 60%);
+  opacity: 0;
+  animation: zap 2.4s steps(1) infinite;
+}
+@keyframes zap {
+  0%, 8%, 16%, 100% { opacity: 0; }
+  3%, 11% { opacity: 1; }
+  5% { opacity: 0.3; }
+}
+
+/* ===== 氷：落下する氷片＋霜 ===== */
+.frost {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: radial-gradient(circle at 50% 75%, rgba(79, 195, 247, 0.22), transparent 65%);
+  animation: fpulse 2.4s ease-in-out infinite;
+}
+.shard {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 8px;
+  background: linear-gradient(135deg, #dff3ff, #4fc3f7);
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px #4fc3f7;
+  animation: fall linear infinite;
+}
+@keyframes fall {
+  0% { transform: translateY(0) rotate(45deg); opacity: 0; }
+  12% { opacity: 1; }
+  100% { transform: translateY(90px) rotate(225deg); opacity: 0; }
+}
+@keyframes fpulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.85; }
+}
+
+/* ===== 闇：渦＋暗黒パルス ===== */
+.vortex {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150px;
+  height: 150px;
+  margin: -75px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent, rgba(176, 107, 255, 0.4), transparent 62%);
+  animation: spin 3s linear infinite;
+}
+.dpulse {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: radial-gradient(circle at 30% 50%, rgba(176, 107, 255, 0.3), transparent 55%);
+  animation: fpulse 2.6s ease-in-out infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== 光：放射光＋きらめき ===== */
+.rays {
+  position: absolute;
+  top: 50%;
+  left: 30%;
+  width: 240px;
+  height: 240px;
+  margin: -120px;
+  background: conic-gradient(from 0deg, rgba(255, 243, 176, 0.28) 0 6deg, transparent 6deg 30deg);
+  animation: spin 9s linear infinite;
+}
+.lpulse {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: radial-gradient(circle at 25% 50%, rgba(255, 243, 176, 0.32), transparent 55%);
+  animation: fpulse 2.6s ease-in-out infinite;
+}
+.sparkle {
+  position: absolute;
+  font-size: 11px;
+  color: #fff3b0;
+  text-shadow: 0 0 6px #ffd54f;
+  animation: tw 1.8s ease-in-out infinite;
+}
+@keyframes tw {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+
+/* ===== 風：旋風＋横なぎ ===== */
+.swirl {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 74px;
+  height: 74px;
+  margin: -37px;
+  border: 2px solid rgba(123, 228, 149, 0.45);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1.8s linear infinite;
+}
+.gust {
+  position: absolute;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #7be495, transparent);
+  animation: gust 2.2s linear infinite;
+}
+@keyframes gust {
+  0% { transform: translateX(-120%); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateX(120%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx > * { animation: none !important; }
+  .card:hover { transform: none; }
+}

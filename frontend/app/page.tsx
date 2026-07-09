@@ -13,9 +13,11 @@ import GMComment from "@/components/GMComment";
 import ResultScreen from "@/components/ResultScreen";
 import TitleScreen from "@/components/TitleScreen";
 import SpellCard from "@/components/SpellCard";
+import SpellChoiceCard from "@/components/SpellChoiceCard";
 import RecordButton from "@/components/RecordButton";
 import LoadingScreen from "@/components/LoadingScreen";
 import SurvivalMode from "@/components/SurvivalMode";
+import Tutorial from "@/components/Tutorial";
 import { moodFromMatchRate } from "@/components/PixelGrimoire";
 import { sfx } from "@/lib/sfx";
 import { setMock, isMock } from "@/lib/api";
@@ -36,6 +38,7 @@ export default function Home() {
   const [dbgElem, setDbgElem] = useState<string>("fire"); // "all" or 単体属性
   const [muted, setMuted] = useState(false); // SE ミュート（初期値は localStorage から同期）
   const [mockMode, setMockMode] = useState(false); // 声なしテスト用モック
+  const [showTutorial, setShowTutorial] = useState(false); // 操作チュートリアル
 
   useEffect(() => {
     setMuted(sfx.isMuted());
@@ -135,18 +138,10 @@ export default function Home() {
           <p style={{ opacity: 0.85, fontFamily: "var(--pixel-font)", fontSize: 13 }}>
             {state.survivalStarted ? `⬆ レベル${state.level}・習得する魔法を選べ` : "最初の魔法を選べ"}
           </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 420, margin: "0 auto" }}>
-            {state.choices.map((sp, i) => {
-              const c = colorForSpell(sp.spell_type);
-              return (
-                <button key={i} onClick={() => chooseSpell(sp)} style={{ ...choiceCard, borderColor: c }}>
-                  <div style={{ fontSize: 12, opacity: 0.75 }}>
-                    <span style={{ color: c }}>{sp.spell_type}</span> ・ {"★".repeat(Math.max(1, Math.min(5, sp.difficulty)))}
-                  </div>
-                  <div style={{ fontSize: 16, margin: "4px 0", fontFamily: "var(--pixel-font)" }}>「{sp.spell_text}」</div>
-                </button>
-              );
-            })}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 440, margin: "12px auto 0" }}>
+            {state.choices.map((sp, i) => (
+              <SpellChoiceCard key={i} spell={sp} onClick={() => chooseSpell(sp)} />
+            ))}
           </div>
         </div>
       )}
@@ -223,15 +218,11 @@ export default function Home() {
       {state.phase === "title" && (
         <>
           <TitleScreen onStart={() => { setMock(false); setMockMode(false); start(); }} />
-          <div style={{ textAlign: "center", marginTop: 4 }}>
-            <button
-              style={{
-                fontSize: 12, padding: "6px 14px", borderRadius: 6, cursor: "pointer",
-                border: "1px dashed var(--accent)", background: "transparent", color: "var(--accent)",
-                fontFamily: "var(--pixel-font)", opacity: 0.85,
-              }}
-              onClick={() => { setMock(true); setMockMode(true); start(); }}
-            >
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 4 }}>
+            <button style={titleSubBtn} onClick={() => setShowTutorial(true)}>
+              🎮 遊びかた
+            </button>
+            <button style={titleSubBtn} onClick={() => { setMock(true); setMockMode(true); start(); }}>
               🔇 声なしで遊ぶ
             </button>
           </div>
@@ -297,6 +288,8 @@ export default function Home() {
           />
         </>
       )}
+
+      <Tutorial open={showTutorial} onClose={() => setShowTutorial(false)} />
     </main>
   );
 }
@@ -331,16 +324,17 @@ const versionBadge: CSSProperties = {
   zIndex: 5,
 };
 
-// 3択の呪文カード
-const choiceCard: CSSProperties = {
-  padding: "12px 14px",
-  borderRadius: 10,
-  border: "2px solid",
-  background: "rgba(10,6,20,0.5)",
-  color: "#fff",
+// タイトル下のサブボタン（遊びかた / 声なし）
+const titleSubBtn: CSSProperties = {
+  fontSize: 12,
+  padding: "6px 14px",
+  borderRadius: 6,
   cursor: "pointer",
-  textAlign: "center",
-  boxShadow: "2px 2px 0 rgba(0,0,0,0.35)",
+  border: "1px dashed var(--accent)",
+  background: "transparent",
+  color: "var(--accent)",
+  fontFamily: "var(--pixel-font)",
+  opacity: 0.85,
 };
 
 const btn: CSSProperties = {

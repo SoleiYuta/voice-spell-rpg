@@ -5,7 +5,7 @@
 // 診断タイプ見出し・ベスト詠唱・統計セクション・リスタートを追加。
 // 設計: wiki/AI-Grimoire/11_リザルト診断設計。担当: harukichi (#18)
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { generateImage } from "@/lib/api";
 import GMComment from "./GMComment";
@@ -15,6 +15,46 @@ import styles from "./ResultScreen.module.css";
 
 const SEG_COUNT = 10;
 const VOLUME_LABEL: Record<Volume, string> = { quiet: "小", normal: "普通", loud: "大" };
+
+// 平均一致率から詠唱ランクを導出（演出用・実データ由来）
+function rankOf(matchPct: number): string {
+  if (matchPct >= 95) return "S";
+  if (matchPct >= 85) return "A";
+  if (matchPct >= 70) return "B";
+  return "C";
+}
+
+// 数値を 0→target までイージングでカウントアップ（reduce時は即表示）
+function useCountUp(target: number, run: boolean, ms = 900): number {
+  const [v, setV] = useState(run ? 0 : target);
+  useEffect(() => {
+    if (!run) { setV(target); return; }
+    let raf = 0;
+    let start: number | null = null;
+    const step = (t: number) => {
+      if (start === null) start = t;
+      const k = Math.min(1, (t - start) / ms);
+      setV(Math.round(target * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, run, ms]);
+  return v;
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    const m = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!m) return;
+    setReduce(m.matches);
+    const onChange = () => setReduce(m.matches);
+    m.addEventListener?.("change", onChange);
+    return () => m.removeEventListener?.("change", onChange);
+  }, []);
+  return reduce;
+}
 
 export interface ResultScreenProps {
   result: ResultData;
@@ -46,6 +86,12 @@ export default function ResultScreen({ result, onRestart, variant = "random", be
   const matchPct = toPct(result.stats.avg_match_rate);
   const mood = moodFromMatchRate(result.stats.avg_match_rate);
   const persona = result.vtuber_persona;
+
+  // 演出：ランクスタンプ＋数値カウントアップ（reduce尊重）
+  const reduce = usePrefersReducedMotion();
+  const rank = rankOf(matchPct);
+  const powerVal = useCountUp(Math.round(result.best_floor.spell_power), !reduce);
+  const matchVal = useCountUp(Math.round(matchPct), !reduce);
   const [copied, setCopied] = useState(false);
   const copyPrompt = () => {
     if (!persona?.portrait_prompt) return;
@@ -69,8 +115,12 @@ export default function ResultScreen({ result, onRestart, variant = "random", be
 
   return (
     <div className={styles.screen}>
-      {/* 診断タイプ見出し */}
+      {/* 診断タイプ見出し（ランクスタンプが着弾） */}
       <div className={styles.headline}>
+        <span className={styles.rankStamp} data-rank={rank} aria-label={`詠唱ランク ${rank}`}>
+          <span className={styles.rankLabel}>RANK</span>
+          {rank}
+        </span>
         <div className={styles.headlineLabel}>― あなたの詠唱型 ―</div>
         <div className={styles.headlineType}>「{result.type_name}」</div>
       </div>
@@ -87,6 +137,7 @@ export default function ResultScreen({ result, onRestart, variant = "random", be
 
           {persona && (
             <div style={vt.card}>
+              <span className={styles.sweep} aria-hidden />
               <div style={vt.cardTag}>VTuberキャラ提案</div>
               <div style={vt.charName}>{persona.character_name}</div>
               <div style={vt.attr}>{persona.attribute}</div>
@@ -119,7 +170,7 @@ export default function ResultScreen({ result, onRestart, variant = "random", be
         <div className={styles.bestSpell}>「{result.best_floor.spell_text}」</div>
         <div className={styles.bestPower}>
           <span className={styles.bestPowerLabel}>威力</span>
-          <span className={styles.bestPowerValue}>{Math.round(result.best_floor.spell_power)}</span>
+          <span className={styles.bestPowerValue}>{powerVal}</span>
         </div>
         {bestRecordingUrl && (
           <div style={{ marginTop: 10, textAlign: "center" }}>
@@ -136,7 +187,7 @@ export default function ResultScreen({ result, onRestart, variant = "random", be
         <div className={styles.statRow}>
           <div className={styles.statHead}>
             <span>平均一致率</span>
-            <span className={styles.statValue}>{Math.round(matchPct)}%</span>
+            <span className={styles.statValue}>{matchVal}%</span>
           </div>
           <SegBar ratio={matchPct / 100} />
         </div>

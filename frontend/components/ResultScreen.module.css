@@ -133,3 +133,93 @@
   transform: translate(1px, 1px);
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
+
+/* ===== 演出：各セクションが時間差で下からせり上がる ===== */
+.screen > * {
+  animation: revealUp 0.55s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+.screen > *:nth-child(1) { animation-delay: 0.05s; }
+.screen > *:nth-child(2) { animation-delay: 0.18s; }
+.screen > *:nth-child(3) { animation-delay: 0.32s; }
+.screen > *:nth-child(4) { animation-delay: 0.46s; }
+.screen > *:nth-child(5) { animation-delay: 0.6s; }
+.screen > *:nth-child(6) { animation-delay: 0.74s; }
+.screen > *:nth-child(n + 7) { animation-delay: 0.88s; }
+@keyframes revealUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 見出しにランクスタンプが回転しながら着弾 */
+.headline {
+  position: relative;
+}
+.rankStamp {
+  position: absolute;
+  top: -14px;
+  right: -8px;
+  z-index: 3;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 26px;
+  font-weight: 800;
+  color: #1a0f2e;
+  background: var(--gold, #ffd23c);
+  border: 3px solid #241038;
+  box-shadow: 0 0 16px rgba(255, 210, 60, 0.6), 3px 3px 0 rgba(0, 0, 0, 0.4);
+  transform: rotate(-8deg);
+  animation: stampSlam 0.5s cubic-bezier(0.2, 1.4, 0.3, 1) 0.5s both;
+}
+.rankStamp[data-rank="B"] { background: #8fe3ff; }
+.rankStamp[data-rank="C"] { background: #cbb9e8; }
+.rankLabel {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  background: var(--bg);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+@keyframes stampSlam {
+  0% { opacity: 0; transform: scale(2.6) rotate(-24deg); }
+  70% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1) rotate(-8deg); }
+}
+
+/* VTuberカードを走る光沢スイープ（tag をはみ出させないよう inset:0 に閉じ込める） */
+.sweep {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.sweep::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  animation: sweepMove 3.4s ease-in-out infinite;
+}
+@keyframes sweepMove {
+  0% { left: -60%; }
+  55%, 100% { left: 130%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen > *,
+  .rankStamp { animation: none !important; }
+  .rankStamp { transform: rotate(-8deg); }
+  .sweep::before { animation: none; opacity: 0; }
+}
