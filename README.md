@@ -69,7 +69,7 @@ git clone git@github.com:SoleiYuta/voice-spell-rpg.git
 ### 今やること（現フェーズのオープンissue）
 - （なし）
 
-_最終更新: 2026-07-09 03:34 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
+_最終更新: 2026-07-09 03:47 UTC — issue状態から自動生成。マーカー内は手で編集しない。_
 <!-- AUTO:phase:end -->
 
 ## バージョン管理
