@@ -13,6 +13,7 @@
 //  survival → (レベルUP) presenting …（ループ）… / (30秒生存 or HP0) gameResult
 import { useCallback, useReducer } from "react";
 import { evaluate, generateSpellChoices, getResult } from "@/lib/api";
+import { pickDeliveryStyle, type DeliveryStyle } from "@/lib/deliveryStyles";
 import type {
   EvaluationResult,
   FloorLog,
@@ -70,6 +71,7 @@ export interface GameState {
   level: number; // 現在の詠唱レベル（1始まり。レベルが上がるほど難呪文）
   choices: SpellData[]; // 3択の候補呪文（#74）
   spell: SpellData | null;
+  deliveryStyle: DeliveryStyle | null; // 今回の詠唱の「言い方（お題）」
   last: EvaluationResult | null;
   weapons: Weapon[]; // 鍛造済み武器（=詠唱した魔法）
   history: FloorLog[]; // 診断用ログ
@@ -84,7 +86,7 @@ type Action =
   | { type: "RESET" }
   | { type: "START"; session_id: string }
   | { type: "CHOICES_LOADED"; choices: SpellData[]; level: number }
-  | { type: "CHOOSE_SPELL"; spell: SpellData }
+  | { type: "CHOOSE_SPELL"; spell: SpellData; deliveryStyle: DeliveryStyle }
   | { type: "BEGIN_RECORD" }
   | { type: "EVALUATING" }
   | { type: "FORGED"; result: EvaluationResult; weapon: Weapon; floor_log: FloorLog; floorId: string; audioUrl?: string }
@@ -100,6 +102,7 @@ const initialState: GameState = {
   level: 1,
   choices: [],
   spell: null,
+  deliveryStyle: null,
   last: null,
   weapons: [],
   history: [],
@@ -119,7 +122,7 @@ function reducer(state: GameState, action: Action): GameState {
     case "CHOICES_LOADED":
       return { ...state, phase: "choosing", choices: action.choices, level: action.level, last: null };
     case "CHOOSE_SPELL":
-      return { ...state, phase: "ready", spell: action.spell, choices: [] };
+      return { ...state, phase: "ready", spell: action.spell, deliveryStyle: action.deliveryStyle, choices: [] };
     case "BEGIN_RECORD":
       return { ...state, phase: "recording", error: null };
     case "EVALUATING":
@@ -187,8 +190,11 @@ export function useGame() {
     [],
   );
 
-  // 3択から1つ選ぶ → ready（詠唱へ）
-  const chooseSpell = useCallback((spell: SpellData) => dispatch({ type: "CHOOSE_SPELL", spell }), []);
+  // 3択から1つ選ぶ → ready（詠唱へ）。同時に「言い方のお題」を1つ抽選する。
+  const chooseSpell = useCallback(
+    (spell: SpellData) => dispatch({ type: "CHOOSE_SPELL", spell, deliveryStyle: pickDeliveryStyle() }),
+    [],
+  );
 
   const start = useCallback(async () => {
     const sessionId =
@@ -217,6 +223,7 @@ export function useGame() {
           spell_text: state.spell.spell_text,
           session_id: state.session_id,
           floor_id: `floor-${state.level}`,
+          delivery_style: state.deliveryStyle?.key,
         });
         const floor_log: FloorLog = {
           floor_id: `floor-${state.level}`,
@@ -241,7 +248,7 @@ export function useGame() {
         dispatch({ type: "ERROR", message: e instanceof Error ? e.message : String(e) });
       }
     },
-    [state.spell, state.session_id, state.level, state.weapons.length],
+    [state.spell, state.session_id, state.level, state.weapons.length, state.deliveryStyle],
   );
 
   // forged 画面 →（初回 or 復帰）戦線へ

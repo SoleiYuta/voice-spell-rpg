@@ -88,6 +88,34 @@ def analyze_audio(wav_bytes: bytes) -> dict:
     }
 
 
+_VOL_NUM = {"quiet": 0.0, "normal": 0.5, "loud": 1.0}
+
+
+def _clamp01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def rule_delivery_match(volume: str, speed_wpm: float, intensity: float, target: dict) -> float:
+    """お題（言い方）への近さをルールで採点する保険。Gemini音声判定が失敗した時のフォールバック。
+    target は {"volume":0..1, "speed":0..1(遅い..速い), "intensity":0..1} の目標プロファイル。
+    実測（声量カテゴリ・速度・気迫）との重み付き距離から 0..1 の近さを返す。"""
+    v = _VOL_NUM.get(volume, 0.5)
+    # 速度正規化: 120wpm以下=遅い(0)、200wpm以上=速い(1)。測定不能(0)は中庸扱い。
+    s = 0.5 if speed_wpm <= 0 else _clamp01((speed_wpm - 120.0) / 80.0)
+    i = _clamp01(intensity)
+    dist = (
+        0.4 * abs(v - target.get("volume", 0.5))
+        + 0.3 * abs(s - target.get("speed", 0.5))
+        + 0.3 * abs(i - target.get("intensity", 0.5))
+    )
+    return round(_clamp01(1.0 - dist), 2)
+
+
+def delivery_bonus(delivery_match: float) -> float:
+    """お題マッチ度(0..1) を威力倍率(0.8..1.2)に変換。お題に近いほど威力が上がる。"""
+    return round(0.8 + 0.4 * _clamp01(delivery_match), 3)
+
+
 def calc_spell_power(match_rate: float, completion_rate: float, intensity: float) -> float:
     """威力 = 詠唱の強さ(intensity) に比例。ただし呪文を正しく言えていること(発音一致率×完了率)が前提のゲート。
     - accuracy(0.5〜1.5): 呪文をどれだけ正確に最後まで言えたか。言えていないと伸びない。

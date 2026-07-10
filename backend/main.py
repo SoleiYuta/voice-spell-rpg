@@ -20,7 +20,13 @@ from google.genai import types
 from rapidfuzz import fuzz
 
 # 評価ロジックはテスト可能なよう scoring.py に分離（GCP非依存）
-from scoring import analyze_audio, calc_match_rate, calc_spell_power
+from scoring import (
+    analyze_audio,
+    calc_match_rate,
+    calc_spell_power,
+    delivery_bonus,
+    rule_delivery_match,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,6 +57,41 @@ image_client = genai.Client(
 IMAGE_MODEL = "gemini-2.5-flash-image"
 
 SPELL_TYPES = ["fire", "ice", "thunder", "dark", "light", "wind"]
+
+# 詠唱の「言い方（お題）」。key はフロントの deliveryStyles.ts と一致させる。
+# instruction=Geminiに渡す採点基準 / target=ルール保険用の目標プロファイル(声量/速度/気迫 0..1)。
+DELIVERY_STYLES = {
+    "chuuni": {
+        "label": "厨二病全開で",
+        "instruction": "中二病っぽく、大げさに格好つけて熱く叫ぶような話し方",
+        "target": {"volume": 1.0, "speed": 0.5, "intensity": 0.9},
+    },
+    "sexy": {
+        "label": "色っぽく囁くように",
+        "instruction": "色気のある、ゆっくりした囁き声で艶やかに紡ぐ話し方",
+        "target": {"volume": 0.0, "speed": 0.15, "intensity": 0.4},
+    },
+    "angry": {
+        "label": "怒りを込めて",
+        "instruction": "怒りと気迫をぶつけるように、強く速くまくし立てる話し方",
+        "target": {"volume": 1.0, "speed": 0.85, "intensity": 0.9},
+    },
+    "sigh": {
+        "label": "ため息まじり気だるげに",
+        "instruction": "気だるく、ため息まじりの脱力した調子の話し方",
+        "target": {"volume": 0.0, "speed": 0.1, "intensity": 0.2},
+    },
+    "love": {
+        "label": "愛を告げるように",
+        "instruction": "大切な人に愛を告げるように、優しく穏やかに語りかける話し方",
+        "target": {"volume": 0.5, "speed": 0.2, "intensity": 0.5},
+    },
+    "bright": {
+        "label": "高らかに元気よく",
+        "instruction": "明るく元気に、高いテンションで張りのある声で放つ話し方",
+        "target": {"volume": 1.0, "speed": 0.8, "intensity": 0.85},
+    },
+}
 FALLBACK_SPELL = {
     "spell_text": "我が手に宿れ、紅蓮の焔よ",
     "difficulty": 2,
@@ -155,12 +196,48 @@ def generate_gm_comment(
         return "魔導書が沈黙している……"
 
 
+class DeliveryScore(BaseModel):
+    score: int  # 0..100（お題への近さ）
+    comment: str
+
+
+def judge_delivery(wav_bytes: bytes, instruction: str) -> Optional[dict]:
+    """Geminiに録音を"聴かせて"、お題（言い方）への近さを採点させる。
+    返り値 {"match": 0..1, "comment": str}。失敗時 None（呼び出し側でルール保険に切替）。"""
+    prompt = f"""あなたは声の演技を審査するAI。この音声の「話し方・声色・雰囲気」が、次のお題にどれくらい近いか評価せよ。
+お題:「{instruction}」
+
+ルール:
+- 言葉の意味や発音の正確さではなく、声のトーン・勢い・抑揚・気だるさ/熱っぽさなど"言い方"だけで判断する
+- score: 0〜100（お題への近さ。全然違えば低く、そっくりなら高く）
+- comment: お題に沿って前向きに褒める/促す日本語20字以内（例「吐息の色気、見事」「もっと熱く叫べ」）
+JSON で score, comment を返せ。"""
+    try:
+        audio_part = types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav")
+        res = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt, audio_part],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=DeliveryScore,
+            ),
+        )
+        data = json.loads(res.text)
+        match = max(0.0, min(1.0, float(data.get("score", 0)) / 100.0))
+        comment = str(data.get("comment") or "").strip()[:40]
+        return {"match": round(match, 2), "comment": comment}
+    except Exception as e:
+        logger.warning(f"judge_delivery error: {e}")
+        return None
+
+
 @app.post("/evaluate")
 async def evaluate(
     audio_file: UploadFile = File(...),
     spell_text: str = Form(""),
     session_id: str = Form(""),
     floor_id: str = Form(""),
+    delivery_style: str = Form(""),
 ):
     t0 = time.time()
     raw = await audio_file.read()
@@ -181,22 +258,43 @@ async def evaluate(
 
     match_rate = calc_match_rate(spell_text, transcript)
     completion_rate = round(min(len(transcript) / max(len(spell_text), 1), 1.0), 2)
-    spell_power = calc_spell_power(match_rate, completion_rate, audio["intensity"])
+    base_power = calc_spell_power(match_rate, completion_rate, audio["intensity"])
+
+    # お題（言い方）が指定されていれば、Geminiに音声を聴かせて演技マッチ度を採点。
+    style = DELIVERY_STYLES.get(delivery_style)
 
     t2 = time.time()
-    gm_comment = await loop.run_in_executor(
-        None,
-        lambda: generate_gm_comment(
-            transcript,
-            match_rate,
-            audio["volume"],
-            speed_wpm,
-            audio["hesitation_count"],
-            completion_rate,
-            spell_power,
+    # GM講評 と お題採点(Gemini音声) を並列で投げてレイテンシを抑える。
+    gm_comment, delivery_ai = await asyncio.gather(
+        loop.run_in_executor(
+            None,
+            lambda: generate_gm_comment(
+                transcript, match_rate, audio["volume"], speed_wpm,
+                audio["hesitation_count"], completion_rate, base_power,
+            ),
         ),
+        loop.run_in_executor(None, lambda: judge_delivery(wav_bytes, style["instruction"]))
+        if style else _none_coro(loop),
     )
     logger.info(f"[timing] gemini={time.time()-t2:.2f}s total={time.time()-t0:.2f}s")
+
+    # お題採点：Gemini成功→AI判定 / 失敗→音響特徴でルール保険。指定なしは None。
+    delivery_score = None
+    delivery_comment = None
+    delivery_source = None
+    if style:
+        if delivery_ai:
+            delivery_score = delivery_ai["match"]
+            delivery_comment = delivery_ai["comment"]
+            delivery_source = "ai"
+        else:
+            delivery_score = rule_delivery_match(
+                audio["volume"], speed_wpm, audio["intensity"], style["target"]
+            )
+            delivery_source = "rule"
+
+    # お題マッチ度を威力倍率(0.8〜1.2)として上乗せ。発音・気迫の土台はそのまま。
+    spell_power = base_power if delivery_score is None else round(base_power * delivery_bonus(delivery_score), 2)
 
     return {
         "transcript": transcript,
@@ -209,7 +307,16 @@ async def evaluate(
         "intensity": audio["intensity"],
         "gm_comment": gm_comment,
         "spell_power": spell_power,
+        "delivery_style": delivery_style or None,
+        "delivery_score": delivery_score,
+        "delivery_comment": delivery_comment,
+        "delivery_source": delivery_source,
     }
+
+
+async def _none_coro(loop):
+    """お題未指定時に asyncio.gather の第2要素へ渡す no-op（None を返す）。"""
+    return None
 
 
 def _parse_floor(floor_id: str) -> int:

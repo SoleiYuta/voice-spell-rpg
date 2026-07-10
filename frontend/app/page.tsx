@@ -129,6 +129,9 @@ export default function Home() {
 
   // 詠唱ごとの「AI声分析＝〇〇型の詠唱」（既存の解析値からルール判定・遅延なし）
   const forgedStyle = state.last ? chantStyle(state.last) : null;
+  // お題（言い方）の演技マッチ度（0..1 → %）。指定なし/未評価は null。
+  const deliveryPct =
+    state.last?.delivery_score != null ? Math.round(state.last.delivery_score * 100) : null;
 
   // 詠唱パートのUI（初回=フルスクリーン / レベルUP時=戦線の上にオーバーレイ、で使い回す）
   const chantUI = (
@@ -155,6 +158,13 @@ export default function Home() {
           <p style={{ opacity: 0.8, fontFamily: "var(--pixel-font)", fontSize: 13 }}>
             {state.survivalStarted ? `⬆ レベル${state.level}到達！次の呪文を詠唱` : "最初の呪文を詠唱せよ"}
           </p>
+          {state.deliveryStyle && (
+            <div style={odaiBadge}>
+              <span style={odaiBadgeLabel}>🎯 言い方のお題</span>
+              <span style={odaiBadgeName}>{state.deliveryStyle.emoji} {state.deliveryStyle.label}</span>
+              <span style={odaiBadgeHint}>お題に近い"言い方"ほど威力UP！</span>
+            </div>
+          )}
           <SpellCard spell={state.spell} autoSpeak={state.phase === "ready"} />
           <div style={{ marginTop: 8 }}>
             {mockMode ? (
@@ -188,8 +198,21 @@ export default function Home() {
           {forgedStyle && (
             <div style={styleBadge}>
               <span style={styleBadgeLabel}>🔍 AIの声分析</span>
-              <span style={styleBadgeName}>{forgedStyle.emoji} {forgedStyle.name}</span>
-              <span style={styleBadgeNote}>{forgedStyle.note}</span>
+              {deliveryPct !== null && state.deliveryStyle ? (
+                <>
+                  <span style={styleBadgeSub}>お題「{state.deliveryStyle.emoji} {state.deliveryStyle.label}」</span>
+                  <span style={styleBadgeName}>演技マッチ {deliveryPct}%</span>
+                  {state.last?.delivery_comment && (
+                    <span style={styleBadgeNote}>「{state.last.delivery_comment}」</span>
+                  )}
+                  <span style={styleBadgeSub}>声の傾向：{forgedStyle.emoji} {forgedStyle.name}</span>
+                </>
+              ) : (
+                <>
+                  <span style={styleBadgeName}>{forgedStyle.emoji} {forgedStyle.name}</span>
+                  <span style={styleBadgeNote}>{forgedStyle.note}</span>
+                </>
+              )}
             </div>
           )}
           <div style={{ margin: "10px 0", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
@@ -356,6 +379,28 @@ const styleBadgeName: CSSProperties = {
   textShadow: "0 0 10px color-mix(in srgb, var(--accent) 55%, transparent)",
 };
 const styleBadgeNote: CSSProperties = { fontSize: 11, opacity: 0.8, maxWidth: 300 };
+const styleBadgeSub: CSSProperties = { fontSize: 11, opacity: 0.7 };
+
+// 詠唱前の「言い方のお題」バッジ（ready/recording）
+const odaiBadge: CSSProperties = {
+  display: "inline-flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 2,
+  margin: "8px auto 4px",
+  padding: "8px 18px",
+  border: "2px dashed var(--accent)",
+  borderRadius: 10,
+  background: "color-mix(in srgb, var(--accent) 10%, rgba(10,6,20,0.55))",
+  fontFamily: "var(--pixel-font)",
+};
+const odaiBadgeLabel: CSSProperties = { fontSize: 10, letterSpacing: "0.14em", opacity: 0.7 };
+const odaiBadgeName: CSSProperties = {
+  fontSize: 18,
+  color: "var(--accent)",
+  textShadow: "0 0 10px color-mix(in srgb, var(--accent) 55%, transparent)",
+};
+const odaiBadgeHint: CSSProperties = { fontSize: 10, opacity: 0.65 };
 
 // タイトル下のサブボタン（遊びかた / 声なし）
 const titleSubBtn: CSSProperties = {

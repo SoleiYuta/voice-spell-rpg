@@ -15,6 +15,11 @@ export interface EvaluationResult {
   confidence: number;
   gm_comment: string;
   spell_power: number;
+  // 言い方（お題）採点（任意）：Gemini音声判定 or ルール保険。#delivery
+  delivery_style?: string | null;
+  delivery_score?: number | null; // 0..1（お題への近さ）
+  delivery_comment?: string | null;
+  delivery_source?: string | null; // "ai" | "rule"
 }
 
 // POST /generate-spell のレスポンス

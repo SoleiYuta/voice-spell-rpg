@@ -4,7 +4,13 @@ import io
 import numpy as np
 import soundfile as sf
 
-from scoring import analyze_audio, calc_match_rate, calc_spell_power
+from scoring import (
+    analyze_audio,
+    calc_match_rate,
+    calc_spell_power,
+    delivery_bonus,
+    rule_delivery_match,
+)
 
 
 def _tone_wav(amp, sr=16000, sec=1.0, gap_at=None, gap_sec=0.0):
@@ -74,3 +80,37 @@ def test_counts_long_pause_as_hesitation():
     # 中央に 0.5 秒の無音 → 詰まり 1
     r = analyze_audio(_tone_wav(0.1, sec=2.0, gap_at=0.7, gap_sec=0.5))
     assert r["hesitation_count"] == 1
+
+
+# ---- rule_delivery_match（お題マッチのルール保険）----
+_SEXY = {"volume": 0.0, "speed": 0.15, "intensity": 0.4}
+_ANGRY = {"volume": 1.0, "speed": 0.85, "intensity": 0.9}
+
+
+def test_delivery_match_in_range():
+    m = rule_delivery_match("normal", 150, 0.5, _SEXY)
+    assert 0.0 <= m <= 1.0
+
+
+def test_delivery_match_rewards_closeness():
+    # 「色っぽく＝静か・遅い・弱め」に近い声ほど高スコア
+    close = rule_delivery_match("quiet", 110, 0.3, _SEXY)
+    far = rule_delivery_match("loud", 210, 1.0, _SEXY)
+    assert close > far
+
+
+def test_delivery_match_style_specific():
+    # 大声・速い・気迫MAX は「怒り」に高く、「色っぽく」に低い
+    voice = ("loud", 205, 0.95)
+    assert rule_delivery_match(*voice, _ANGRY) > rule_delivery_match(*voice, _SEXY)
+
+
+# ---- delivery_bonus ----
+def test_delivery_bonus_range():
+    assert delivery_bonus(0.0) == 0.8
+    assert delivery_bonus(1.0) == 1.2
+    assert delivery_bonus(0.5) == 1.0
+
+
+def test_delivery_bonus_monotonic():
+    assert delivery_bonus(0.9) > delivery_bonus(0.2)

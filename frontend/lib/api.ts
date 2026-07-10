@@ -90,11 +90,13 @@ export async function evaluate(args: {
   spell_text: string;
   session_id?: string;
   floor_id?: string;
+  delivery_style?: string; // 言い方のお題（key）。あればサーバが演技マッチを採点。
 }): Promise<EvaluationResult> {
   if (isMock()) {
     await wait(450);
     const match = Math.round((0.85 + Math.random() * 0.13) * 100) / 100;
     const power = Math.round((1.7 + Math.random() * 0.9) * 100) / 100; // 1.7〜2.6（強めで遊びやすい）
+    const dstyle = args.delivery_style || null;
     return {
       transcript: args.spell_text,
       match_rate: match,
@@ -105,6 +107,10 @@ export async function evaluate(args: {
       confidence: 0.95,
       gm_comment: "見事な詠唱だ。その調子で押し切れ！",
       spell_power: power,
+      delivery_style: dstyle,
+      delivery_score: dstyle ? Math.round((0.6 + Math.random() * 0.35) * 100) / 100 : null,
+      delivery_comment: dstyle ? "お題に近いぞ、その調子！" : null,
+      delivery_source: dstyle ? "ai" : null,
     };
   }
   const form = new FormData();
@@ -112,6 +118,7 @@ export async function evaluate(args: {
   form.append("spell_text", args.spell_text);
   form.append("session_id", args.session_id ?? "");
   form.append("floor_id", args.floor_id ?? "");
+  form.append("delivery_style", args.delivery_style ?? "");
   const res = await fetch(`${BASE}/evaluate`, { method: "POST", body: form });
   if (!res.ok) throw new Error(`evaluate failed: ${res.status}`);
   return res.json();
