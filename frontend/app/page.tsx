@@ -21,6 +21,7 @@ import Tutorial from "@/components/Tutorial";
 import { moodFromMatchRate } from "@/components/PixelGrimoire";
 import { sfx } from "@/lib/sfx";
 import { setMock, isMock } from "@/lib/api";
+import { chantStyle } from "@/lib/chantStyle";
 import { APP_VERSION } from "@/lib/version";
 
 const CHANT_PHASES = new Set(["presenting", "choosing", "ready", "recording", "evaluating", "forged"]);
@@ -126,6 +127,9 @@ export default function Home() {
   const showSurvival =
     state.survivalStarted && state.phase !== "gameResult" && state.phase !== "finishing";
 
+  // 詠唱ごとの「AI声分析＝〇〇型の詠唱」（既存の解析値からルール判定・遅延なし）
+  const forgedStyle = state.last ? chantStyle(state.last) : null;
+
   // 詠唱パートのUI（初回=フルスクリーン / レベルUP時=戦線の上にオーバーレイ、で使い回す）
   const chantUI = (
     <>
@@ -181,6 +185,13 @@ export default function Home() {
       {state.phase === "forged" && state.last && (
         <div style={{ textAlign: "center" }}>
           <p style={{ color: "var(--accent)", fontFamily: "var(--pixel-font)" }}>⚡ 魔法を鍛造した！</p>
+          {forgedStyle && (
+            <div style={styleBadge}>
+              <span style={styleBadgeLabel}>🔍 AIの声分析</span>
+              <span style={styleBadgeName}>{forgedStyle.emoji} {forgedStyle.name}</span>
+              <span style={styleBadgeNote}>{forgedStyle.note}</span>
+            </div>
+          )}
           <div style={{ margin: "10px 0", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
             <EvaluationBars result={state.last} pixel compact />
             <GMComment
@@ -323,6 +334,28 @@ const versionBadge: CSSProperties = {
   pointerEvents: "none",
   zIndex: 5,
 };
+
+// AIの声分析バッジ（詠唱ごとの「〇〇型の詠唱」）
+const styleBadge: CSSProperties = {
+  display: "inline-flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 2,
+  margin: "8px auto 0",
+  padding: "8px 18px",
+  border: "1px solid var(--accent)",
+  borderRadius: 10,
+  background: "color-mix(in srgb, var(--accent) 12%, rgba(10,6,20,0.6))",
+  boxShadow: "0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent)",
+  fontFamily: "var(--pixel-font)",
+};
+const styleBadgeLabel: CSSProperties = { fontSize: 10, letterSpacing: "0.14em", opacity: 0.7 };
+const styleBadgeName: CSSProperties = {
+  fontSize: 17,
+  color: "var(--accent)",
+  textShadow: "0 0 10px color-mix(in srgb, var(--accent) 55%, transparent)",
+};
+const styleBadgeNote: CSSProperties = { fontSize: 11, opacity: 0.8, maxWidth: 300 };
 
 // タイトル下のサブボタン（遊びかた / 声なし）
 const titleSubBtn: CSSProperties = {
