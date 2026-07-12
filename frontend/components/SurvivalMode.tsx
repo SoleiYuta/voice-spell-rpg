@@ -28,7 +28,7 @@ export interface SurvivalModeProps {
 const W = 360;
 const H = 520;
 const MAX_LEVEL = 5;
-const BOSS_HP = 4000; // Lv5の最終ボス（黄色巨大スライム）のHP。倒すとクリア。
+const BOSS_HP = 12000; // Lv5の最終ボスHP。弱すぎたので3倍に強化(4000→12000)。倒すとクリア。
 const STOMP_T = 0.7;      // 踏みつけの溜め＝ジャンプ滞空時間（秒）
 const STOMP_JUMP_H = 62;  // 踏みつけジャンプの最高到達点（描画Yオフセット px）
 const BASE_HP = 43;       // Lv1（1階）の基礎HP
@@ -117,6 +117,7 @@ interface World {
   spdMul: number;   // 移動速度倍率
   boss: Enemy | null;   // Lv5ボス（enemies[]にも入れて全武器で殴れる）
   bossPhase: boolean;   // ボス戦中
+  bossAlert: number;    // ボス出現アラートの残り秒(>0の間は警告バナーを表示)
   victoryT: number;     // 勝利演出タイマー(>0の間はエフェクトだけ流す)
   kills: number;
   elapsed: number;
@@ -197,7 +198,7 @@ export default function SurvivalMode({
         w.elapsed = 0;
         w.enemies = []; w.shots = []; w.iceFalls = []; w.holes = []; w.beams = []; w.tornados = []; w.flames = [];
         w.damageTexts = []; w.rings = []; w.gems = []; // 強化(xp/倍率)はラウンド跨ぎで保持、ジェムだけ掃除
-        w.boss = null; w.bossPhase = false; w.victoryT = 0;
+        w.boss = null; w.bossPhase = false; w.bossAlert = 0; w.victoryT = 0;
         w.spawnTimer = 0;
         w.awaitingLevel = false;
         w.player.hp = w.player.maxHp;
@@ -219,7 +220,7 @@ export default function SurvivalMode({
       enemies: [], shots: [], particles: [], bolts: [], iceFalls: [], holes: [], beams: [], tornados: [], flames: [],
       damageTexts: [], rings: [], gems: [],
       xp: 0, xpNext: 5, plevel: 0, dmgMul: 1, fireMul: 1, spdMul: 1,
-      boss: null, bossPhase: false, victoryT: 0,
+      boss: null, bossPhase: false, bossAlert: 0, victoryT: 0,
       kills: 0, elapsed: 0, spawnTimer: 0, fireAt: {},
       awaitingLevel: false, shake: 0, hurt: 0, flash: 1, flashEl: toElem(weapons[0]?.spell_type),
       finished: false,
@@ -362,6 +363,7 @@ export default function SurvivalMode({
       const level = levelRef.current;
       w.elapsed += dt;
       const kills0 = w.kills; // このフレームで撃破が増えたら効果音（throttle済み）
+      if (w.bossAlert > 0) w.bossAlert = Math.max(0, w.bossAlert - dt); // ボス出現アラートの減衰
 
       // 勝利演出中：エフェクトだけ流して、終わったら onFinish("victory")
       if (w.victoryT > 0) {
@@ -376,7 +378,14 @@ export default function SurvivalMode({
       if (!debugRef.current && !w.finished && !w.bossPhase && w.elapsed >= durRef.current) {
         if (!w.awaitingLevel) {
           if (level < MAX_LEVEL) { w.awaitingLevel = true; onLevelUpRef.current(level + 1); return; }
-          w.bossPhase = true; spawnBoss(w); // Lv5: ボス出現。以降は通常stepを継続し、撃破で勝利
+          // Lv5: 最終ボス出現。まず盤面を一掃（雑魚・EXP・弾/エフェクト全消し）→警告アラート→ボス召喚。
+          w.enemies = []; w.gems = []; w.xp = 0;
+          w.shots = []; w.flames = []; w.iceFalls = []; w.tornados = []; w.beams = []; w.bolts = []; w.holes = []; w.particles = [];
+          w.damageTexts = []; w.rings = [];
+          w.bossPhase = true;
+          w.bossAlert = 2.6; // 警告バナー表示秒数
+          w.shake = 10; w.flash = 1; w.hurt = 0;
+          spawnBoss(w);
         }
       }
 
@@ -898,6 +907,26 @@ export default function SurvivalMode({
       }
 
       if (debugRef.current) { ctx.textAlign = "left"; ctx.font = "11px monospace"; ctx.fillStyle = "#5ce08a"; ctx.fillText("DEBUG (無敵)", 8, 62); }
+
+      // ボス出現アラート（最終ボス召喚時の警告バナー）
+      if (w.bossAlert > 0) {
+        const blink = 0.5 + 0.5 * Math.sin(w.elapsed * 18);
+        ctx.fillStyle = `rgba(120,0,10,${0.28 + 0.22 * blink})`; ctx.fillRect(0, 0, W, H);
+        const cy = H / 2;
+        ctx.fillStyle = "rgba(0,0,0,0.78)"; ctx.fillRect(0, cy - 48, W, 96);
+        ctx.fillStyle = `rgba(255,60,60,${0.55 + 0.45 * blink})`;
+        ctx.fillRect(0, cy - 48, W, 3); ctx.fillRect(0, cy + 45, W, 3);
+        ctx.textAlign = "center";
+        ctx.fillStyle = `rgba(255,90,90,${0.7 + 0.3 * blink})`; ctx.font = "bold 15px monospace";
+        ctx.fillText("⚠  W A R N I N G  ⚠", W / 2, cy - 18);
+        ctx.fillStyle = "#ffd54f"; ctx.font = "bold 22px monospace";
+        ctx.shadowColor = "rgba(255,60,60,0.8)"; ctx.shadowBlur = 8;
+        ctx.fillText("最終ボス 出現", W / 2, cy + 10);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff"; ctx.font = "11px monospace";
+        ctx.fillText("― 深淵の主 ―", W / 2, cy + 32);
+        ctx.textAlign = "left";
+      }
 
       if (pausedRef.current) { ctx.fillStyle = "rgba(10,6,20,0.55)"; ctx.fillRect(0, 0, W, H); }
     };
