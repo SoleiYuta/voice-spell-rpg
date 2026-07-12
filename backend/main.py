@@ -392,30 +392,41 @@ async def generate_spell_endpoint(req: GenerateSpellRequest):
     return spell
 
 
-# ===== 適応型AIゲームマスター（function calling エージェント・#81）=====
-# 単発生成ではなく「観測→ツールで次ラウンドの方針を判断」する。
-# GMが plan_round ツールを自分で呼び、難易度・重点属性・言い方のお題・理由を決める。
+# ===== 適応型AIゲームマスター（function calling エージェント・#81 / 低レイテンシ版 #87）=====
+# 「観測 → ツールで方針(難易度・お題・理由)と3つの呪文を"一度に"決める」。
+# plan と 3呪文生成を1回の function calling に統合し、Gemini往復を 2→1 に減らす。
 _DELIVERY_KEYS = list(DELIVERY_STYLES.keys())
 
-PLAN_ROUND_TOOL = types.Tool(function_declarations=[types.FunctionDeclaration(
-    name="plan_round",
-    description="観測したプレイヤーの傾向をふまえ、次ラウンドの出題方針を決める",
+FORGE_ROUND_TOOL = types.Tool(function_declarations=[types.FunctionDeclaration(
+    name="forge_round",
+    description="プレイヤーの傾向を観測し、次ラウンドの方針と3つの呪文を一度に決める",
     parameters={
         "type": "object",
         "properties": {
-            "difficulty": {"type": "integer", "description": "1〜5。易しすぎ/難しすぎを避け、成長できる“フロー領域”を狙う"},
-            "element_focus": {"type": "string", "enum": SPELL_TYPES, "description": "3択に必ず含める重点属性（苦手克服 or 得意伸長）"},
+            "difficulty": {"type": "integer", "description": "1〜5。易しすぎ/難しすぎを避けフロー領域を狙う"},
             "delivery_style": {"type": "string", "enum": _DELIVERY_KEYS, "description": "言い方のお題（前回までと変化をつける）"},
-            "reason": {"type": "string", "description": "なぜこの方針か。プレイヤーの実測を必ず根拠に引用する"},
-            "coaching": {"type": "string", "description": "プレイヤーへの短い励まし/助言（任意・40字以内）"},
+            "reason": {"type": "string", "description": "なぜこの方針か。プレイヤーの実測を必ず根拠に引用"},
+            "coaching": {"type": "string", "description": "短い励まし/助言（任意・40字以内）"},
+            "spells": {
+                "type": "array",
+                "description": "3つ。spell_type は互いに異なること",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "spell_text": {"type": "string", "description": "声に出したくなる厨二病で格好いい日本語呪文（40字以内）"},
+                        "spell_type": {"type": "string", "enum": SPELL_TYPES},
+                    },
+                    "required": ["spell_text", "spell_type"],
+                },
+            },
         },
-        "required": ["difficulty", "element_focus", "delivery_style", "reason"],
+        "required": ["difficulty", "delivery_style", "reason", "spells"],
     },
 )])
 
 
-def plan_round(profile: Optional[PlayerProfile], floor_num: int) -> Optional[dict]:
-    """GMエージェントが次ラウンドの方針を function calling で決める。失敗時 None（=従来のランダム出題にフォールバック）。"""
+def forge_round(profile: Optional[PlayerProfile], floor_num: int) -> Optional[dict]:
+    """GMエージェントが1回のfunction callingで方針＋3呪文を決める。失敗時 None（=従来出題にフォールバック）。"""
     if profile:
         vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(profile.avg_volume, profile.avg_volume)
         obs = (
@@ -428,23 +439,24 @@ def plan_round(profile: Optional[PlayerProfile], floor_num: int) -> Optional[dic
         obs = "（初回・傾向データなし）"
 
     prompt = f"""あなたはプレイヤーを見守る適応型AIゲームマスター（魔導書の精霊）。
-直近の観測から、次フロア{floor_num}の出題方針を plan_round ツールで決めよ。
+直近の観測から、次フロア{floor_num}の方針と3つの呪文を forge_round ツールで一度に決めよ。
 
 観測:
 {obs}
 
 指針:
 - 苦手を少しだけ克服させ、得意も活かす。易しすぎ/難しすぎを避ける（フロー領域）
-- delivery_style（言い方のお題）は変化をつけ、表現の幅を広げさせる
+- delivery_style（言い方のお題）は変化をつけ表現の幅を広げさせる
 - フロアが上がるほど挑戦的に
+- 3つの呪文は spell_type を互いに変え、difficulty 相応の長さ・難度に
 - reason にはプレイヤーの実測を必ず引用する
-必ず plan_round を1回だけ呼ぶこと。"""
+必ず forge_round を1回だけ呼ぶこと。"""
     try:
         res = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
-                tools=[PLAN_ROUND_TOOL],
+                tools=[FORGE_ROUND_TOOL],
                 tool_config=types.ToolConfig(
                     function_calling_config=types.FunctionCallingConfig(mode="ANY")
                 ),
@@ -453,57 +465,74 @@ def plan_round(profile: Optional[PlayerProfile], floor_num: int) -> Optional[dic
         for c in (res.candidates or []):
             for p in (c.content.parts or []):
                 fc = getattr(p, "function_call", None)
-                if fc and fc.name == "plan_round":
+                if fc and fc.name == "forge_round":
                     a = dict(fc.args)
-                    el = a.get("element_focus")
+                    diff = max(1, min(5, int(a.get("difficulty", 2))))
                     ds = a.get("delivery_style")
+                    spells, used = [], set()
+                    for s in list(a.get("spells") or []):
+                        st = s.get("spell_type")
+                        txt = str(s.get("spell_text") or "").strip()
+                        if st in SPELL_TYPES and txt and st not in used:
+                            used.add(st)
+                            spells.append({
+                                "spell_text": txt[:60], "difficulty": diff,
+                                "spell_type": st, "expected_length_sec": round(2.0 + diff * 0.6, 1),
+                            })
+                    # 3つに満たなければ残り属性で補完（体験維持）
+                    for st in SPELL_TYPES:
+                        if len(spells) >= 3:
+                            break
+                        if st not in used:
+                            used.add(st)
+                            spells.append({
+                                "spell_text": FALLBACK_SPELL["spell_text"], "difficulty": diff,
+                                "spell_type": st, "expected_length_sec": 3.0,
+                            })
+                    spells = spells[:3]
+                    if len(spells) < 3:
+                        return None
                     return {
-                        "difficulty": max(1, min(5, int(a.get("difficulty", 2)))),
-                        "element_focus": el if el in SPELL_TYPES else random.choice(SPELL_TYPES),
-                        "delivery_style": ds if ds in DELIVERY_STYLES else random.choice(_DELIVERY_KEYS),
-                        "reason": str(a.get("reason") or "").strip()[:120],
-                        "coaching": str(a.get("coaching") or "").strip()[:60],
+                        "spells": spells,
+                        "agent": {
+                            "difficulty": diff,
+                            "element_focus": spells[0]["spell_type"],
+                            "delivery_style": ds if ds in DELIVERY_STYLES else random.choice(_DELIVERY_KEYS),
+                            "reason": str(a.get("reason") or "").strip()[:120],
+                            "coaching": str(a.get("coaching") or "").strip()[:60],
+                        },
                     }
     except Exception as e:
-        logger.warning(f"plan_round error: {e}")
+        logger.warning(f"forge_round error: {e}")
     return None
 
 
 @app.post("/generate-spell-choices")
 async def generate_spell_choices_endpoint(req: GenerateSpellRequest):
-    """GMエージェントが観測→plan_roundツールで方針を決め、その方針に沿って3択を生成（#81）。
-    エージェントが落ちても従来のランダム出題にフォールバックする。#74 アーチャー伝説風。"""
+    """GMエージェントが1回のfunction callingで方針＋3択を決める（#81 / 低レイテンシ #87）。
+    フロア1と失敗時は従来のランダム並列生成にフォールバック。#74 アーチャー伝説風。"""
     t0 = time.time()
     floor_num = _parse_floor(req.floor_id)
     loop = asyncio.get_event_loop()
 
-    # 1) GMエージェントに次ラウンドの方針を決めさせる（観測→ツール呼び出し）。
-    #    フロア1は適応する履歴が無い＆初回ロードを速く保つためエージェントを回さない。
-    plan = None
+    # フロア2以降はエージェント（観測→ツールで方針＋3呪文を一括決定）。
+    # フロア1は履歴が無い＆初回ロード短縮のため従来出題。
+    forged = None
     if floor_num >= 2:
-        plan = await loop.run_in_executor(None, lambda: plan_round(req.player_profile, floor_num))
+        forged = await loop.run_in_executor(None, lambda: forge_round(req.player_profile, floor_num))
 
-    if plan:
-        focus = plan["element_focus"]
-        others = random.sample([t for t in SPELL_TYPES if t != focus], 2)
-        types3 = [focus] + others
-        random.shuffle(types3)
-        target_diff = plan["difficulty"]
-    else:
-        types3 = random.sample(SPELL_TYPES, 3)  # フォールバック：6属性から3つ
-        target_diff = None
+    if forged:
+        logger.info(f"[timing] generate-spell-choices={time.time()-t0:.2f}s floor={floor_num} agent=ai")
+        return forged
 
-    # 2) 方針（重点属性＋難易度）に沿って3択を並列生成
+    # フォールバック：属性違いの3呪文を並列生成
+    types3 = random.sample(SPELL_TYPES, 3)
     spells = await asyncio.gather(*[
-        loop.run_in_executor(
-            None,
-            (lambda ft: lambda: generate_spell(req.player_profile, floor_num, force_type=ft, target_difficulty=target_diff))(t),
-        )
+        loop.run_in_executor(None, (lambda ft: lambda: generate_spell(req.player_profile, floor_num, force_type=ft))(t))
         for t in types3
     ])
-    logger.info(f"[timing] generate-spell-choices={time.time()-t0:.2f}s floor={floor_num} agent={'ai' if plan else 'fallback'}")
-    # agent ブロックに判断（お題・重点属性・理由・コーチング）を載せる（#82で可視化）
-    return {"spells": spells, "agent": plan}
+    logger.info(f"[timing] generate-spell-choices={time.time()-t0:.2f}s floor={floor_num} agent=fallback")
+    return {"spells": spells, "agent": None}
 
 
 # ===== /result（リザルト診断）=====
