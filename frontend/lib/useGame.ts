@@ -13,8 +13,9 @@
 //  survival → (レベルUP) presenting …（ループ）… / (30秒生存 or HP0) gameResult
 import { useCallback, useReducer } from "react";
 import { evaluate, generateSpellChoices, getResult } from "@/lib/api";
-import { pickDeliveryStyle, type DeliveryStyle } from "@/lib/deliveryStyles";
+import { deliveryStyleByKey, pickDeliveryStyle, type DeliveryStyle } from "@/lib/deliveryStyles";
 import type {
+  AgentPlan,
   EvaluationResult,
   FloorLog,
   PlayerProfile,
@@ -70,6 +71,7 @@ export interface GameState {
   session_id: string;
   level: number; // 現在の詠唱レベル（1始まり。レベルが上がるほど難呪文）
   choices: SpellData[]; // 3択の候補呪文（#74）
+  agentPlan: AgentPlan | null; // GMエージェントの判断（#81/#82・思考ログ表示に使う）
   spell: SpellData | null;
   deliveryStyle: DeliveryStyle | null; // 今回の詠唱の「言い方（お題）」
   last: EvaluationResult | null;
@@ -85,7 +87,7 @@ export interface GameState {
 type Action =
   | { type: "RESET" }
   | { type: "START"; session_id: string }
-  | { type: "CHOICES_LOADED"; choices: SpellData[]; level: number }
+  | { type: "CHOICES_LOADED"; choices: SpellData[]; agent: AgentPlan | null; level: number }
   | { type: "CHOOSE_SPELL"; spell: SpellData; deliveryStyle: DeliveryStyle }
   | { type: "BEGIN_RECORD" }
   | { type: "EVALUATING" }
@@ -101,6 +103,7 @@ const initialState: GameState = {
   session_id: "",
   level: 1,
   choices: [],
+  agentPlan: null,
   spell: null,
   deliveryStyle: null,
   last: null,
@@ -120,7 +123,7 @@ function reducer(state: GameState, action: Action): GameState {
     case "START":
       return { ...initialState, phase: "presenting", session_id: action.session_id };
     case "CHOICES_LOADED":
-      return { ...state, phase: "choosing", choices: action.choices, level: action.level, last: null };
+      return { ...state, phase: "choosing", choices: action.choices, agentPlan: action.agent, level: action.level, last: null };
     case "CHOOSE_SPELL":
       return { ...state, phase: "ready", spell: action.spell, deliveryStyle: action.deliveryStyle, choices: [] };
     case "BEGIN_RECORD":
@@ -177,12 +180,12 @@ export function useGame() {
   const loadChoices = useCallback(
     async (sessionId: string, level: number, history: FloorLog[]) => {
       try {
-        const choices = await generateSpellChoices({
+        const { spells, agent } = await generateSpellChoices({
           session_id: sessionId,
           floor_id: `floor-${level}`,
           player_profile: buildProfile(history),
         });
-        dispatch({ type: "CHOICES_LOADED", choices, level });
+        dispatch({ type: "CHOICES_LOADED", choices: spells, agent, level });
       } catch (e) {
         dispatch({ type: "ERROR", message: e instanceof Error ? e.message : String(e) });
       }
@@ -190,10 +193,13 @@ export function useGame() {
     [],
   );
 
-  // 3択から1つ選ぶ → ready（詠唱へ）。同時に「言い方のお題」を1つ抽選する。
+  // 3択から1つ選ぶ → ready（詠唱へ）。お題はGMエージェントの指定を優先（#82）、無ければ抽選。
   const chooseSpell = useCallback(
-    (spell: SpellData) => dispatch({ type: "CHOOSE_SPELL", spell, deliveryStyle: pickDeliveryStyle() }),
-    [],
+    (spell: SpellData) => {
+      const agentStyle = deliveryStyleByKey(state.agentPlan?.delivery_style);
+      dispatch({ type: "CHOOSE_SPELL", spell, deliveryStyle: agentStyle ?? pickDeliveryStyle() });
+    },
+    [state.agentPlan],
   );
 
   const start = useCallback(async () => {

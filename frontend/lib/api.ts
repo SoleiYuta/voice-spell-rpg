@@ -1,6 +1,7 @@
 // バックエンド(FastAPI on Cloud Run)を叩く薄いラッパ。
 // ベースURLは env から（URL直書き禁止）。土台担当: mutsukichi(nyanko12)。
 import type {
+  AgentPlan,
   EvaluationResult,
   FloorLog,
   PlayerProfile,
@@ -67,12 +68,17 @@ export async function generateSpellChoices(args: {
   session_id?: string;
   floor_id?: string;
   player_profile?: PlayerProfile;
-}): Promise<SpellData[]> {
+}): Promise<{ spells: SpellData[]; agent: AgentPlan | null }> {
   if (isMock()) {
     await wait(500);
     const n = mockFloorNum(args.floor_id);
     const picks = [MOCK_ELEMS[(n - 1) % 6], MOCK_ELEMS[n % 6], MOCK_ELEMS[(n + 1) % 6]];
-    return picks.map((el) => ({ spell_text: MOCK_SPELL_TEXT[el], difficulty: Math.min(5, n), spell_type: el, expected_length_sec: 3 }));
+    const spells = picks.map((el) => ({ spell_text: MOCK_SPELL_TEXT[el], difficulty: Math.min(5, n), spell_type: el, expected_length_sec: 3 }));
+    // フロア2以降は「GMエージェントの思考」も返す（本番と同じ形）
+    const agent: AgentPlan | null = n >= 2
+      ? { difficulty: Math.min(5, n), element_focus: picks[0], delivery_style: "chuuni", reason: `一致率は安定しているが詰まりが課題。得意の${picks[0]}で自信を保ちつつ、難易度${Math.min(5, n)}で挑戦させる。`, coaching: "気迫を込めて、一息で唱えきろう！" }
+      : null;
+    return { spells, agent };
   }
   const res = await fetch(`${BASE}/generate-spell-choices`, {
     method: "POST",
@@ -81,7 +87,7 @@ export async function generateSpellChoices(args: {
   });
   if (!res.ok) throw new Error(`generate-spell-choices failed: ${res.status}`);
   const data = await res.json();
-  return ((data && data.spells) || []).slice(0, 3);
+  return { spells: ((data && data.spells) || []).slice(0, 3), agent: (data && data.agent) || null };
 }
 
 // 録音(webm Blob)を送って詠唱を評価。録音は lib/audio.ts（#22）で取得する。

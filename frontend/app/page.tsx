@@ -145,6 +145,15 @@ export default function Home() {
           <p style={{ opacity: 0.85, fontFamily: "var(--pixel-font)", fontSize: 13 }}>
             {state.survivalStarted ? `⬆ レベル${state.level}・習得する魔法を選べ` : "最初の魔法を選べ"}
           </p>
+          {state.agentPlan && (
+            <div style={agentThink}>
+              <span style={agentThinkLabel}>🔮 魔導書の思考（AIゲームマスター）</span>
+              <span style={agentThinkReason}>{state.agentPlan.reason}</span>
+              {state.agentPlan.coaching && (
+                <span style={agentThinkCoach}>&ldquo;{state.agentPlan.coaching}&rdquo;</span>
+              )}
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 440, margin: "12px auto 0" }}>
             {state.choices.map((sp, i) => (
               <SpellChoiceCard key={i} spell={sp} onClick={() => chooseSpell(sp)} />
@@ -401,6 +410,29 @@ const odaiBadgeName: CSSProperties = {
   textShadow: "0 0 10px color-mix(in srgb, var(--accent) 55%, transparent)",
 };
 const odaiBadgeHint: CSSProperties = { fontSize: 10, opacity: 0.65 };
+
+// GMエージェントの思考ログ（choosing・#82）
+const agentThink: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+  maxWidth: 440,
+  margin: "10px auto 0",
+  padding: "10px 14px",
+  border: "1px solid var(--accent)",
+  borderRadius: 10,
+  background: "color-mix(in srgb, var(--accent) 9%, rgba(10,6,20,0.55))",
+  boxShadow: "0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent)",
+  textAlign: "left",
+};
+const agentThinkLabel: CSSProperties = {
+  fontSize: 11,
+  letterSpacing: "0.1em",
+  color: "var(--accent)",
+  fontFamily: "var(--pixel-font)",
+};
+const agentThinkReason: CSSProperties = { fontSize: 12.5, lineHeight: 1.6, opacity: 0.92 };
+const agentThinkCoach: CSSProperties = { fontSize: 12, fontStyle: "italic", color: "var(--accent)", opacity: 0.95 };
 
 // タイトル下のサブボタン（遊びかた / 声なし）
 const titleSubBtn: CSSProperties = {

@@ -30,6 +30,15 @@ export interface SpellData {
   expected_length_sec: number;
 }
 
+// GMエージェントの判断（#81/#82）。/generate-spell-choices が返す agent ブロック。
+export interface AgentPlan {
+  difficulty: number;
+  element_focus: string;
+  delivery_style: string;
+  reason: string;
+  coaching?: string;
+}
+
 // generate-spell に渡すプレイヤー傾向
 export interface PlayerProfile {
   avg_match_rate?: number;
