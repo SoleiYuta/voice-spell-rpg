@@ -50,7 +50,7 @@ const PALETTE: Record<Elem, string[]> = {
   wind: ["#eafff0", "#a6f0c0", "#5ad98a", "#2fa866"],
 };
 const FIRE_INTERVAL: Record<Elem, number> = {
-  fire: 0.9, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
+  fire: 0.9, ice: 0.8, thunder: 0.75, dark: 1.5, light: 1.1, wind: 0.9, // 雷=0.5*1.5（連射抑制 #70）
 };
 
 // 敵タイプ別の色 [濃い縁, 本体]。0=雑魚(赤) / 1=速い小型(橙) / 2=硬い大型(紫)
