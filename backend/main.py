@@ -15,6 +15,7 @@ from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from google.cloud import speech
+from google.cloud import firestore
 from google import genai
 from google.genai import types
 from rapidfuzz import fuzz
@@ -55,6 +56,38 @@ image_client = genai.Client(
     location="global",
 )
 IMAGE_MODEL = "gemini-2.5-flash-image"
+
+# Firestore：プレイヤー記憶の永続化（#83）。未有効/失敗でも動くようガードする。
+try:
+    fs_client = firestore.Client(project="voicespellrpg")
+except Exception as e:  # pragma: no cover - 環境依存
+    logging.getLogger(__name__).warning(f"Firestore init failed: {e}")
+    fs_client = None
+
+
+def load_player_memory(player_id: str) -> Optional[dict]:
+    """匿名プレイヤーIDから過去の記録を読む。無ければ None（初回）。"""
+    if not fs_client or not player_id:
+        return None
+    try:
+        doc = fs_client.collection("players").document(player_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        logger.warning(f"load_player_memory error: {e}")
+        return None
+
+
+def save_player_memory(player_id: str, data: dict) -> None:
+    """1プレイ終了時にプレイヤーの記録を更新（来訪回数を+1・最終プレイ時刻を刻む）。"""
+    if not fs_client or not player_id:
+        return
+    try:
+        payload = dict(data)
+        payload["play_count"] = firestore.Increment(1)
+        payload["last_played"] = firestore.SERVER_TIMESTAMP
+        fs_client.collection("players").document(player_id).set(payload, merge=True)
+    except Exception as e:
+        logger.warning(f"save_player_memory error: {e}")
 
 SPELL_TYPES = ["fire", "ice", "thunder", "dark", "light", "wind"]
 
@@ -111,6 +144,7 @@ class PlayerProfile(BaseModel):
 class GenerateSpellRequest(BaseModel):
     session_id: str = ""
     floor_id: str = ""
+    player_id: str = ""  # 永続プレイヤーID（セッション跨ぎの記憶・#83）
     player_profile: Optional[PlayerProfile] = None
 
 
@@ -425,8 +459,9 @@ FORGE_ROUND_TOOL = types.Tool(function_declarations=[types.FunctionDeclaration(
 )])
 
 
-def forge_round(profile: Optional[PlayerProfile], floor_num: int) -> Optional[dict]:
-    """GMエージェントが1回のfunction callingで方針＋3呪文を決める。失敗時 None（=従来出題にフォールバック）。"""
+def forge_round(profile: Optional[PlayerProfile], floor_num: int, memory: Optional[dict] = None) -> Optional[dict]:
+    """GMエージェントが1回のfunction callingで方針＋3呪文を決める。失敗時 None（=従来出題にフォールバック）。
+    memory があれば「魔導書が覚えている」＝過去の記録を観測に含め、reason で言及させる（#83）。"""
     if profile:
         vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(profile.avg_volume, profile.avg_volume)
         obs = (
@@ -438,18 +473,29 @@ def forge_round(profile: Optional[PlayerProfile], floor_num: int) -> Optional[di
     else:
         obs = "（初回・傾向データなし）"
 
+    mem_block = ""
+    if memory:
+        mem_block = (
+            f"\n\n【この詠唱者の過去の記録＝お前は彼を覚えている】\n"
+            f"- 来訪回数: {int(memory.get('play_count', 1))}回目\n"
+            f"- 前回の詠唱型: {memory.get('last_type_name', '不明')}\n"
+            f"- 過去の到達レベル: {memory.get('reached_level', '不明')}\n"
+            f"- 過去の苦手: {memory.get('weak_pattern') or '特になし'}\n"
+            f"→ reason の冒頭で、常連の詠唱者として軽く再会に触れ、過去を踏まえた出題にせよ。"
+        )
+
     prompt = f"""あなたはプレイヤーを見守る適応型AIゲームマスター（魔導書の精霊）。
 直近の観測から、次フロア{floor_num}の方針と3つの呪文を forge_round ツールで一度に決めよ。
 
 観測:
-{obs}
+{obs}{mem_block}
 
 指針:
 - 苦手を少しだけ克服させ、得意も活かす。易しすぎ/難しすぎを避ける（フロー領域）
 - delivery_style（言い方のお題）は変化をつけ表現の幅を広げさせる
 - フロアが上がるほど挑戦的に
 - 3つの呪文は spell_type を互いに変え、difficulty 相応の長さ・難度に
-- reason にはプレイヤーの実測を必ず引用する
+- reason にはプレイヤーの実測（と、あれば過去の記録）を必ず引用する
 必ず forge_round を1回だけ呼ぶこと。"""
     try:
         res = gemini_client.models.generate_content(
@@ -515,11 +561,14 @@ async def generate_spell_choices_endpoint(req: GenerateSpellRequest):
     floor_num = _parse_floor(req.floor_id)
     loop = asyncio.get_event_loop()
 
-    # フロア2以降はエージェント（観測→ツールで方針＋3呪文を一括決定）。
-    # フロア1は履歴が無い＆初回ロード短縮のため従来出題。
+    # 記憶を読む（#83）。常連なら初回フロアでも「おかえり」でエージェントを走らせる。
+    memory = await loop.run_in_executor(None, lambda: load_player_memory(req.player_id))
+
+    # フロア2以降 or 記憶のある常連はエージェント（観測→ツールで方針＋3呪文を一括決定）。
+    # まっさらな初回のフロア1のみ、ロード短縮で従来出題。
     forged = None
-    if floor_num >= 2:
-        forged = await loop.run_in_executor(None, lambda: forge_round(req.player_profile, floor_num))
+    if floor_num >= 2 or memory is not None:
+        forged = await loop.run_in_executor(None, lambda: forge_round(req.player_profile, floor_num, memory))
 
     if forged:
         logger.info(f"[timing] generate-spell-choices={time.time()-t0:.2f}s floor={floor_num} agent=ai")
@@ -562,6 +611,7 @@ class FloorLog(BaseModel):
 
 class ResultRequest(BaseModel):
     session_id: str = ""
+    player_id: str = ""  # 永続プレイヤーID（記憶の保存先・#83）
     floors: list[FloorLog] = []
 
 
@@ -734,6 +784,17 @@ async def result_endpoint(req: ResultRequest):
         loop.run_in_executor(None, lambda: generate_vtuber_persona(stats, best_floor, stats["avg_speed_wpm"])),
     )
     logger.info(f"[timing] result gemini={time.time()-t0:.2f}s floors={len(floors)}")
+
+    # プレイヤーの記録を更新（次回の「魔導書が覚えている」用・#83）
+    await loop.run_in_executor(None, lambda: save_player_memory(req.player_id, {
+        "last_type_name": type_name,
+        "avg_match_rate": stats["avg_match_rate"],
+        "avg_volume": stats["avg_volume"],
+        "reached_level": len(floors),
+        "best_power": best_floor["spell_power"],
+        "weak_pattern": "詠唱が詰まりがち" if stats["total_hesitation"] > len(floors) else "",
+        "strong_pattern": "大声" if stats["avg_volume"] == "loud" else ("囁き" if stats["avg_volume"] == "quiet" else "安定した声"),
+    }))
 
     return {
         "session_id": req.session_id,

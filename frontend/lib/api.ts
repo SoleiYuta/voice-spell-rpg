@@ -27,6 +27,22 @@ export function setMock(on: boolean): void {
   try { window.localStorage.setItem("vsrpg_mock", on ? "1" : "0"); } catch { /* noop */ }
 }
 
+// 永続プレイヤーID（セッションを跨いで“魔導書が覚える”ための匿名ID・#83）。
+// localStorage に一度だけ生成して保持する。
+export function getPlayerId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    let id = window.localStorage.getItem("vsrpg_pid");
+    if (!id) {
+      id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `p-${Date.now()}`;
+      window.localStorage.setItem("vsrpg_pid", id);
+    }
+    return id;
+  } catch {
+    return "";
+  }
+}
+
 const MOCK_ELEMS = ["fire", "ice", "thunder", "dark", "light", "wind"];
 const MOCK_SPELL_TEXT: Record<string, string> = {
   fire: "紅蓮の焔よ、我が敵を焼き尽くせ",
@@ -83,7 +99,7 @@ export async function generateSpellChoices(args: {
   const res = await fetch(`${BASE}/generate-spell-choices`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args),
+    body: JSON.stringify({ ...args, player_id: getPlayerId() }),
   });
   if (!res.ok) throw new Error(`generate-spell-choices failed: ${res.status}`);
   const data = await res.json();
@@ -160,7 +176,7 @@ export async function getResult(args: {
   const res = await fetch(`${BASE}/result`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args),
+    body: JSON.stringify({ ...args, player_id: getPlayerId() }),
   });
   if (!res.ok) throw new Error(`result failed: ${res.status}`);
   return res.json();
