@@ -37,6 +37,7 @@ export type GamePhase =
   | "gameResult";
 
 export const SURVIVE_SEC = 30; // 生存目標（秒）
+export const MAX_WEAPONS = 3; // 同時装備できる魔法の最大数（#79）
 
 // 詠唱で鍛造した魔法＝ヴァンサバでの自動発射武器
 export interface Weapon {
@@ -75,7 +76,8 @@ export interface GameState {
   spell: SpellData | null;
   deliveryStyle: DeliveryStyle | null; // 今回の詠唱の「言い方（お題）」
   last: EvaluationResult | null;
-  weapons: Weapon[]; // 鍛造済み武器（=詠唱した魔法）
+  weapons: Weapon[]; // 装備中の武器（=詠唱した魔法。最大 MAX_WEAPONS・#79）
+  pendingWeapon: Weapon | null; // 上限超過で入れ替え待ちの新武器（#79）
   history: FloorLog[]; // 診断用ログ
   survivalStarted: boolean; // 一度でも戦線に出たか
   outcome: "victory" | "defeat" | null;
@@ -92,6 +94,8 @@ type Action =
   | { type: "BEGIN_RECORD" }
   | { type: "EVALUATING" }
   | { type: "FORGED"; result: EvaluationResult; weapon: Weapon; floor_log: FloorLog; floorId: string; audioUrl?: string }
+  | { type: "SWAP_WEAPON"; index: number }
+  | { type: "DISCARD_PENDING" }
   | { type: "ENTER_SURVIVAL" }
   | { type: "LEVEL_UP"; level: number }
   | { type: "FINISH"; outcome: "victory" | "defeat" }
@@ -108,6 +112,7 @@ const initialState: GameState = {
   deliveryStyle: null,
   last: null,
   weapons: [],
+  pendingWeapon: null,
   history: [],
   survivalStarted: false,
   outcome: null,
@@ -130,19 +135,34 @@ function reducer(state: GameState, action: Action): GameState {
       return { ...state, phase: "recording", error: null };
     case "EVALUATING":
       return { ...state, phase: "evaluating" };
-    case "FORGED":
+    case "FORGED": {
+      // 上限未満ならそのまま装備。上限に達していたら入れ替え待ち（pendingWeapon）に置く（#79）
+      const overCap = state.weapons.length >= MAX_WEAPONS;
       return {
         ...state,
         phase: "forged",
         last: action.result,
-        weapons: [...state.weapons, action.weapon],
+        weapons: overCap ? state.weapons : [...state.weapons, action.weapon],
+        pendingWeapon: overCap ? action.weapon : null,
         history: [...state.history, action.floor_log],
         recordings: action.audioUrl
           ? { ...state.recordings, [action.floorId]: action.audioUrl }
           : state.recordings,
       };
+    }
+    case "SWAP_WEAPON": {
+      if (!state.pendingWeapon) return state;
+      const pending = state.pendingWeapon;
+      return {
+        ...state,
+        weapons: state.weapons.map((w, i) => (i === action.index ? pending : w)),
+        pendingWeapon: null,
+      };
+    }
+    case "DISCARD_PENDING":
+      return { ...state, pendingWeapon: null };
     case "ENTER_SURVIVAL":
-      return { ...state, phase: "survival", survivalStarted: true };
+      return { ...state, phase: "survival", survivalStarted: true, pendingWeapon: null };
     case "LEVEL_UP":
       return { ...state, phase: "presenting", level: action.level };
     case "FINISH":
@@ -257,6 +277,10 @@ export function useGame() {
     [state.spell, state.session_id, state.level, state.weapons.length, state.deliveryStyle],
   );
 
+  // 装備上限(3)超過時：既存の1つを新武器と入れ替え / 新武器を捨てる（#79）
+  const swapWeapon = useCallback((index: number) => dispatch({ type: "SWAP_WEAPON", index }), []);
+  const discardPending = useCallback(() => dispatch({ type: "DISCARD_PENDING" }), []);
+
   // forged 画面 →（初回 or 復帰）戦線へ
   const enterSurvival = useCallback(() => dispatch({ type: "ENTER_SURVIVAL" }), []);
 
@@ -285,5 +309,5 @@ export function useGame() {
 
   const reset = useCallback(() => dispatch({ type: "RESET" }), []);
 
-  return { state, start, chooseSpell, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC };
+  return { state, start, chooseSpell, beginRecord, cast, swapWeapon, discardPending, enterSurvival, levelUp, finish, reset, SURVIVE_SEC };
 }

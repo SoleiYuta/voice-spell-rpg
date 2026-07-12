@@ -17,6 +17,7 @@ import styles from "./SurvivalMode.module.css";
 
 export interface SurvivalModeProps {
   weapons: Weapon[];
+  level: number; // 現在のラウンド番号（=難易度。装備数と切り離す・#79）
   durationSec: number;
   paused: boolean;
   onLevelUp: (nextLevel: number) => void;
@@ -146,6 +147,7 @@ function rollCards(): CardOpt[] {
 
 export default function SurvivalMode({
   weapons,
+  level,
   durationSec,
   paused,
   onLevelUp,
@@ -171,22 +173,25 @@ export default function SurvivalMode({
   };
 
   const weaponsRef = useRef(weapons);
+  const levelRef = useRef(level);
   const pausedRef = useRef(paused);
   const durRef = useRef(durationSec);
   const onLevelUpRef = useRef(onLevelUp);
   const onFinishRef = useRef(onFinish);
   const debugRef = useRef(debug);
-  const prevWeaponCount = useRef(weapons.length);
+  const prevLevel = useRef(level);
 
   useEffect(() => { weaponsRef.current = weapons; }, [weapons]);
+  useEffect(() => { levelRef.current = level; }, [level]);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
   useEffect(() => { debugRef.current = debug; }, [debug]);
   useEffect(() => { durRef.current = durationSec; }, [durationSec]);
   useEffect(() => { onLevelUpRef.current = onLevelUp; }, [onLevelUp]);
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
 
+  // 新ラウンド開始（レベル上昇）でワールドをリセット＝全回復・再配置・敵掃除（#79：装備数と切り離す）
   useEffect(() => {
-    if (weapons.length > prevWeaponCount.current) {
+    if (level > prevLevel.current) {
       const w = worldRef.current;
       if (w) {
         w.elapsed = 0;
@@ -199,11 +204,11 @@ export default function SurvivalMode({
         w.player.x = W / 2; w.player.y = H / 2;
         w.hurt = 0;
         w.flash = 1;
-        w.flashEl = toElem(weapons[weapons.length - 1]?.spell_type);
+        w.flashEl = toElem(weaponsRef.current[weaponsRef.current.length - 1]?.spell_type);
       }
-      prevWeaponCount.current = weapons.length;
+      prevLevel.current = level;
     }
-  }, [weapons]);
+  }, [level]);
 
   const pointer = useRef<{ active: boolean; x: number; y: number }>({ active: false, x: 0, y: 0 });
   const keys = useRef<Set<string>>(new Set());
@@ -354,7 +359,7 @@ export default function SurvivalMode({
     };
 
     const step = (dt: number, w: World) => {
-      const level = weaponsRef.current.length;
+      const level = levelRef.current;
       w.elapsed += dt;
       const kills0 = w.kills; // このフレームで撃破が増えたら効果音（throttle済み）
 
@@ -710,21 +715,37 @@ export default function SurvivalMode({
         }
       }
 
-      // プレイヤー（影・移動ボブ・向き反映・杖）
+      // 主人公＝黒服の魔術師（人型）。#77。当たり判定 r は不変、見た目のみ人型に。
       const p = w.player;
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.beginPath(); ctx.ellipse(p.x, p.y + 11, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
-      const moving = pointer.current.active || keys.current.size > 0;
-      const py = p.y + (moving ? Math.round(Math.sin(w.elapsed * 12) * 1.5) : 0);
       const f = p.face;
-      px(p.x + f * 11, py + 1, 3, "#ffd23c"); // 杖（向いてる側）
-      px(p.x + f * 11, py - 6, 3, "#e9dcb8");
-      px(p.x, py + 2, 20, "#4a1f8a");
-      px(p.x, py, 16, "#a06bff");
-      px(p.x, py - 12, 14, "#2a1250"); // 帽子
-      px(p.x, py - 18, 8, "#2a1250");
-      px(p.x - 4 + f * 1.5, py - 1, 3, "#fff"); // 目（向きに寄る）
-      px(p.x + 4 + f * 1.5, py - 1, 3, "#fff");
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.beginPath(); ctx.ellipse(p.x, p.y + 12, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+      const moving = pointer.current.active || keys.current.size > 0;
+      const py = p.y + (moving ? Math.round(Math.sin(w.elapsed * 12) * 1.5) : Math.round(Math.sin(w.elapsed * 3))); // 歩行ボブ / 静止時は浮遊ゆらぎ
+      const cx = p.x;
+      // ローブ（黒・裾広がりの人型シルエット）
+      ctx.fillStyle = "#141019";
+      ctx.beginPath();
+      ctx.moveTo(cx - 6, py - 4); ctx.lineTo(cx + 6, py - 4);
+      ctx.lineTo(cx + 10, py + 11); ctx.lineTo(cx - 10, py + 11); ctx.closePath(); ctx.fill();
+      px(cx - 7, py + 11, 4, "#141019"); px(cx, py + 12, 4, "#141019"); px(cx + 7, py + 11, 4, "#141019"); // 裾のギザ
+      ctx.fillStyle = "#2a1250"; ctx.fillRect(Math.round(cx - 1), Math.round(py - 3), 2, 13); // 紫の前立て
+      px(cx - f * 8, py + 2, 5, "#1a1430"); // 反対側の袖（人型感）
+      // フード（黒・頭を覆う）
+      px(cx, py - 9, 15, "#14101f");
+      px(cx, py - 15, 11, "#14101f");
+      // 顔（フードの奥・向き側に寄る）＋光る目
+      px(cx + f * 2, py - 8, 6, "#d9c7a8");
+      ctx.shadowColor = "#a06bff"; ctx.shadowBlur = 6;
+      px(cx + f * 1, py - 8, 2, "#e8d9ff"); px(cx + f * 4, py - 8, 2, "#e8d9ff");
+      ctx.shadowBlur = 0;
+      // 杖（向いてる側・先端に紫のオーブ＋グロー・脈動）
+      const stx = cx + f * 10;
+      ctx.strokeStyle = "#6b4a2a"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(stx, py + 10); ctx.lineTo(stx, py - 12); ctx.stroke();
+      ctx.fillStyle = "#a06bff"; ctx.shadowColor = "#a06bff"; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(stx, py - 13, 4 + Math.sin(w.elapsed * 6), 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
 
       // ===== 光り物：加算合成 =====
       ctx.globalCompositeOperation = "lighter";
@@ -848,7 +869,7 @@ export default function SurvivalMode({
 
       // レベル / kill（右上）
       ctx.textAlign = "right";
-      ctx.font = "bold 13px monospace"; ctx.fillStyle = "#ffd54f"; ctx.fillText(`Lv ${weaponsRef.current.length}`, W - 8, 17);
+      ctx.font = "bold 13px monospace"; ctx.fillStyle = "#ffd54f"; ctx.fillText(`Lv ${levelRef.current}`, W - 8, 17);
       ctx.font = "11px monospace"; ctx.fillStyle = "#eee"; ctx.fillText(`${w.kills} kills`, W - 8, 31);
 
       // 装備魔法アイコン列（下部）

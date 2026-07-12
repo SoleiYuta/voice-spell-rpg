@@ -7,7 +7,7 @@
 // ■ レベルUP時は SurvivalMode を凍結(paused)したまま、上に詠唱UIを重ねて新呪文を詠唱→復帰。
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { useGame, colorForSpell, type Weapon } from "@/lib/useGame";
+import { useGame, colorForSpell, MAX_WEAPONS, type Weapon } from "@/lib/useGame";
 import EvaluationBars from "@/components/EvaluationBars";
 import GMComment from "@/components/GMComment";
 import ResultScreen from "@/components/ResultScreen";
@@ -32,7 +32,7 @@ const ELEM_JA: Record<string, string> = { fire: "炎", ice: "氷", thunder: "雷
 const DEBUG_CODE = "wwssadadab"; // タイトル画面でこれを打つとデバッグへ
 
 export default function Home() {
-  const { state, start, chooseSpell, beginRecord, cast, enterSurvival, levelUp, finish, reset, SURVIVE_SEC } =
+  const { state, start, chooseSpell, beginRecord, cast, swapWeapon, discardPending, enterSurvival, levelUp, finish, reset, SURVIVE_SEC } =
     useGame();
   const [micError, setMicError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
@@ -112,6 +112,7 @@ export default function Home() {
 
         <SurvivalMode
           weapons={debugWeapons}
+          level={Math.max(1, debugWeapons.length)}
           durationSec={99999}
           paused={false}
           onLevelUp={() => {}}
@@ -232,9 +233,35 @@ export default function Home() {
               mood={moodFromMatchRate(state.last.match_rate)}
             />
           </div>
-          <button style={btn} onClick={enterSurvival}>
-            {state.survivalStarted ? "▶ 戦線へ戻る" : "▶ 戦線へ"}
-          </button>
+          {state.pendingWeapon ? (
+            <div style={swapWrap}>
+              <div style={swapTitle}>⚠️ 装備は最大{MAX_WEAPONS}つ。入れ替える魔法を選べ</div>
+              <div style={swapNew}>
+                新: <b style={{ color: state.pendingWeapon.color }}>{state.pendingWeapon.spell_type}</b>{" "}
+                「{state.pendingWeapon.spell_text}」
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 420, margin: "0 auto" }}>
+                {state.weapons.map((wp, i) => (
+                  <button
+                    key={wp.id}
+                    style={{ ...swapItem, borderColor: wp.color }}
+                    onClick={() => { swapWeapon(i); enterSurvival(); }}
+                  >
+                    <span style={{ fontSize: 11, opacity: 0.7 }}>これを外す →</span>{" "}
+                    <span style={{ color: wp.color }}>Lv{wp.level} {wp.spell_type}</span>{" "}
+                    <span style={{ fontSize: 12, opacity: 0.9 }}>「{wp.spell_text}」</span>
+                  </button>
+                ))}
+                <button style={swapDiscard} onClick={() => { discardPending(); enterSurvival(); }}>
+                  新しい魔法を捨てる（今の3つを維持）
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button style={btn} onClick={enterSurvival}>
+              {state.survivalStarted ? "▶ 戦線へ戻る" : "▶ 戦線へ"}
+            </button>
+          )}
         </div>
       )}
     </>
@@ -280,6 +307,7 @@ export default function Home() {
         <div style={{ position: "relative" }}>
           <SurvivalMode
             weapons={state.weapons}
+            level={state.level}
             durationSec={SURVIVE_SEC}
             paused={state.phase !== "survival"}
             onLevelUp={(lv) => {
@@ -433,6 +461,32 @@ const agentThinkLabel: CSSProperties = {
 };
 const agentThinkReason: CSSProperties = { fontSize: 12.5, lineHeight: 1.6, opacity: 0.92 };
 const agentThinkCoach: CSSProperties = { fontSize: 12, fontStyle: "italic", color: "var(--accent)", opacity: 0.95 };
+
+// 装備入れ替え選択（#79・上限3超過時）
+const swapWrap: CSSProperties = { marginTop: 12, display: "flex", flexDirection: "column", gap: 8 };
+const swapTitle: CSSProperties = { fontFamily: "var(--pixel-font)", fontSize: 13, color: "#ffd23c" };
+const swapNew: CSSProperties = { fontSize: 13, fontFamily: "var(--pixel-font)" };
+const swapItem: CSSProperties = {
+  padding: "8px 12px",
+  borderRadius: 8,
+  border: "2px solid",
+  background: "rgba(10,6,20,0.5)",
+  color: "#fff",
+  cursor: "pointer",
+  textAlign: "left",
+  fontFamily: "var(--pixel-font)",
+  boxShadow: "2px 2px 0 rgba(0,0,0,0.35)",
+};
+const swapDiscard: CSSProperties = {
+  padding: "8px 12px",
+  borderRadius: 8,
+  border: "1px dashed var(--accent)",
+  background: "transparent",
+  color: "var(--accent)",
+  cursor: "pointer",
+  fontFamily: "var(--pixel-font)",
+  fontSize: 12,
+};
 
 // タイトル下のサブボタン（遊びかた / 声なし）
 const titleSubBtn: CSSProperties = {
