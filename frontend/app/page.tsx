@@ -276,7 +276,7 @@ export default function Home() {
                   </button>
                 ))}
                 <button style={swapDiscard} onClick={() => { discardPending(); enterSurvival(); }}>
-                  新しい魔法を捨てる（今の3つを維持）
+                  新しい魔法を捨てる（今の{MAX_WEAPONS}つを維持）
                 </button>
               </div>
             </div>

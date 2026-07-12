@@ -37,7 +37,7 @@ export type GamePhase =
   | "gameResult";
 
 export const SURVIVE_SEC = 30; // 生存目標（秒）
-export const MAX_WEAPONS = 3; // 同時装備できる魔法の最大数（#79）
+export const MAX_WEAPONS = 5; // 同時装備できる魔法の最大数（#79・3→5に緩和）
 
 // 詠唱で鍛造した魔法＝ヴァンサバでの自動発射武器
 export interface Weapon {
