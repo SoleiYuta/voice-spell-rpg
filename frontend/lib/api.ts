@@ -149,6 +149,7 @@ export async function evaluate(args: {
 // セッション総評（診断）。Firestore不使用のため、フロントが保持する詠唱履歴を渡す。
 export async function getResult(args: {
   session_id?: string;
+  outcome?: string; // "victory" | "defeat"（#84 難易度自己補正シグナル）
   floors: FloorLog[];
 }): Promise<ResultData> {
   if (isMock()) {

@@ -475,13 +475,21 @@ def forge_round(profile: Optional[PlayerProfile], floor_num: int, memory: Option
 
     mem_block = ""
     if memory:
+        last_lv = memory.get("reached_level", "?")
+        outcome_ja = {
+            "victory": "全レベルを制覇（クリア）",
+            "defeat": f"レベル{last_lv}で力尽きた",
+        }.get(memory.get("last_outcome"), "不明")
         mem_block = (
             f"\n\n【この詠唱者の過去の記録＝お前は彼を覚えている】\n"
             f"- 来訪回数: {int(memory.get('play_count', 1))}回目\n"
             f"- 前回の詠唱型: {memory.get('last_type_name', '不明')}\n"
-            f"- 過去の到達レベル: {memory.get('reached_level', '不明')}\n"
+            f"- 過去の到達レベル: {last_lv}\n"
+            f"- 前回の結末: {outcome_ja}\n"
             f"- 過去の苦手: {memory.get('weak_pattern') or '特になし'}\n"
-            f"→ reason の冒頭で、常連の詠唱者として軽く再会に触れ、過去を踏まえた出題にせよ。"
+            f"→ reason の冒頭で、常連の詠唱者として軽く再会に触れる。\n"
+            f"→【難易度の自己補正・#84】前回クリアできたなら今回は少し難しく、"
+            f"早々に力尽きたなら少し易しく、結末を踏まえて difficulty を調整し、その旨を reason に書け。"
         )
 
     prompt = f"""あなたはプレイヤーを見守る適応型AIゲームマスター（魔導書の精霊）。
@@ -612,6 +620,7 @@ class FloorLog(BaseModel):
 class ResultRequest(BaseModel):
     session_id: str = ""
     player_id: str = ""  # 永続プレイヤーID（記憶の保存先・#83）
+    outcome: str = ""  # "victory" | "defeat"（難易度の自己補正シグナル・#84）
     floors: list[FloorLog] = []
 
 
@@ -788,6 +797,7 @@ async def result_endpoint(req: ResultRequest):
     # プレイヤーの記録を更新（次回の「魔導書が覚えている」用・#83）
     await loop.run_in_executor(None, lambda: save_player_memory(req.player_id, {
         "last_type_name": type_name,
+        "last_outcome": req.outcome,  # #84: 次回の難易度自己補正シグナル
         "avg_match_rate": stats["avg_match_rate"],
         "avg_volume": stats["avg_volume"],
         "reached_level": len(floors),

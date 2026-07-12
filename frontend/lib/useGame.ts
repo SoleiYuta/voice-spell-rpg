@@ -274,7 +274,7 @@ export function useGame() {
     async (outcome: "victory" | "defeat") => {
       dispatch({ type: "FINISH", outcome });
       try {
-        const result = await getResult({ session_id: state.session_id, floors: state.history });
+        const result = await getResult({ session_id: state.session_id, outcome, floors: state.history });
         dispatch({ type: "GAME_RESULT", result });
       } catch (e) {
         dispatch({ type: "ERROR", message: e instanceof Error ? e.message : String(e) });
