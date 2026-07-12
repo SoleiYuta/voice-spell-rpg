@@ -28,6 +28,8 @@ const W = 360;
 const H = 520;
 const MAX_LEVEL = 5;
 const BOSS_HP = 4000; // Lv5の最終ボス（黄色巨大スライム）のHP。倒すとクリア。
+const STOMP_T = 0.7;      // 踏みつけの溜め＝ジャンプ滞空時間（秒）
+const STOMP_JUMP_H = 62;  // 踏みつけジャンプの最高到達点（描画Yオフセット px）
 const BASE_HP = 43;       // Lv1（1階）の基礎HP
 const FLOOR_HP_MUL = 1.3; // 階が上がるごとの敵HP倍率（30秒=1階ごとに1.3倍）
 
@@ -50,7 +52,7 @@ const PALETTE: Record<Elem, string[]> = {
   wind: ["#eafff0", "#a6f0c0", "#5ad98a", "#2fa866"],
 };
 const FIRE_INTERVAL: Record<Elem, number> = {
-  fire: 0.9, ice: 0.8, thunder: 0.5, dark: 1.5, light: 1.1, wind: 0.9,
+  fire: 0.9, ice: 0.8, thunder: 0.75, dark: 1.5, light: 1.1, wind: 0.9, // 雷=0.5*1.5（連射抑制 #70）
 };
 
 // 敵タイプ別の色 [濃い縁, 本体]。0=雑魚(赤) / 1=速い小型(橙) / 2=硬い大型(紫)
@@ -79,7 +81,7 @@ const FLAME = [
   "..RRRRR..",
 ];
 
-interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; flash: number; type: number; boss?: boolean; stompCd?: number; stompPhase?: number; sx?: number; sy?: number; sT?: number; }
+interface Enemy { x: number; y: number; hp: number; maxHp: number; r: number; speed: number; flash: number; type: number; boss?: boolean; stompCd?: number; stompPhase?: number; sx?: number; sy?: number; sT?: number; jx?: number; jy?: number; } // sx/sy=踏みつけ着地点, jx/jy=ジャンプ起点
 interface Shot { x: number; y: number; vx: number; vy: number; dmg: number; el: Elem; life: number; hit: Set<Enemy>; }
 interface DamageText { x: number; y: number; vy: number; life: number; max: number; text: string; color: string; } // 命中ダメージ数字
 interface Ring { x: number; y: number; r: number; life: number; max: number; color: string; } // 撃破の弾けリング
@@ -411,9 +413,13 @@ export default function SurvivalMode({
       if (w.boss && w.boss.hp > 0) {
         const b = w.boss;
         if (b.stompPhase === 1) {
-          // 溜め（動かない）→ 着地でAoE
+          // 溜め＝着地点(sx,sy)へ放物線ジャンプ（水平は起点→着地点を線形補間、高さは描画側で）
           b.sT = (b.sT ?? 0) - dt;
+          const prog = Math.min(1, 1 - (b.sT ?? 0) / STOMP_T); // 0→1
+          b.x = (b.jx ?? b.x) + ((b.sx ?? 0) - (b.jx ?? b.x)) * prog;
+          b.y = (b.jy ?? b.y) + ((b.sy ?? 0) - (b.jy ?? b.y)) * prog;
           if ((b.sT ?? 0) <= 0) {
+            b.x = b.sx ?? b.x; b.y = b.sy ?? b.y; // 着地点にぴたり
             const hit = Math.hypot(w.player.x - (b.sx ?? 0), w.player.y - (b.sy ?? 0)) < 66 + w.player.r;
             if (hit && !debugRef.current) { w.player.hp -= 34; w.hurt = 1; }
             w.shake = Math.min(12, w.shake + 11);
@@ -425,7 +431,8 @@ export default function SurvivalMode({
           const ex = w.player.x - b.x, ey = w.player.y - b.y, d = Math.hypot(ex, ey) || 1;
           b.x += (ex / d) * b.speed * dt; b.y += (ey / d) * b.speed * dt;
           b.stompCd = (b.stompCd ?? 0) - dt;
-          if ((b.stompCd ?? 0) <= 0) { b.stompPhase = 1; b.sx = w.player.x; b.sy = w.player.y; b.sT = 0.7; } // プレイヤー位置を狙って溜め
+          // プレイヤー位置を狙って溜め開始。ジャンプ起点を記録
+          if ((b.stompCd ?? 0) <= 0) { b.stompPhase = 1; b.jx = b.x; b.jy = b.y; b.sx = w.player.x; b.sy = w.player.y; b.sT = STOMP_T; }
         }
       }
 
@@ -655,25 +662,32 @@ export default function SurvivalMode({
       // 敵（タイプ別の色・影・歩行の上下ボブ）
       for (const e of w.enemies) {
         if (e.boss) {
-          // 黄色巨大スライム（ぷるん）＋踏みつけ予告
-          ctx.fillStyle = "rgba(0,0,0,0.35)";
-          ctx.beginPath(); ctx.ellipse(e.x, e.y + e.r * 0.7, e.r * 0.9, e.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
-          const wob = Math.sin(w.elapsed * 4) * 3;
-          ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#c8961e";
-          ctx.beginPath(); ctx.ellipse(e.x, e.y + e.r * 0.15, e.r + wob, e.r * 0.9, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#ffd54f";
-          ctx.beginPath(); ctx.ellipse(e.x, e.y, e.r - 3 + wob, e.r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "rgba(255,255,255,0.5)";
-          ctx.beginPath(); ctx.ellipse(e.x - e.r * 0.35, e.y - e.r * 0.3, e.r * 0.22, e.r * 0.14, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "#3a2a00";
-          ctx.beginPath(); ctx.arc(e.x - e.r * 0.3, e.y - e.r * 0.05, 4, 0, Math.PI * 2); ctx.arc(e.x + e.r * 0.3, e.y - e.r * 0.05, 4, 0, Math.PI * 2); ctx.fill();
-          if (e.stompPhase === 1) {
-            const prog = 1 - (e.sT ?? 0) / 0.7;
+          // 踏みつけ溜め中は放物線でジャンプ（描画Yを持ち上げ、影は地面に残す）
+          const stomping = e.stompPhase === 1;
+          const sprog = stomping ? Math.min(1, 1 - (e.sT ?? 0) / STOMP_T) : 0; // 0→1
+          const jump = stomping ? Math.sin(sprog * Math.PI) * STOMP_JUMP_H : 0; // 山なり（着地でjump=0）
+          const by = e.y - jump; // ボス本体の描画Y（跳ね上がる）
+
+          // 踏みつけ予告（着地点 sx,sy に赤リング）。ジャンプより先に描いて足元に敷く
+          if (stomping) {
             ctx.strokeStyle = "rgba(255,80,80,0.9)"; ctx.lineWidth = 3;
             ctx.beginPath(); ctx.arc(e.sx ?? 0, e.sy ?? 0, 66, 0, Math.PI * 2); ctx.stroke();
-            ctx.fillStyle = `rgba(255,120,60,${0.15 + 0.3 * prog})`;
-            ctx.beginPath(); ctx.arc(e.sx ?? 0, e.sy ?? 0, 66 * prog, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = `rgba(255,120,60,${0.15 + 0.3 * sprog})`;
+            ctx.beginPath(); ctx.arc(e.sx ?? 0, e.sy ?? 0, 66 * sprog, 0, Math.PI * 2); ctx.fill();
           }
+          // 黄色巨大スライム（ぷるん）。影は地面(e.y)、本体は by。跳ぶほど影を小さく薄く
+          const sh = stomping ? 1 - jump / (STOMP_JUMP_H * 1.6) : 1;
+          ctx.fillStyle = `rgba(0,0,0,${0.35 * sh})`;
+          ctx.beginPath(); ctx.ellipse(e.x, e.y + e.r * 0.7, e.r * 0.9 * sh, e.r * 0.3 * sh, 0, 0, Math.PI * 2); ctx.fill();
+          const wob = Math.sin(w.elapsed * 4) * 3;
+          ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#c8961e";
+          ctx.beginPath(); ctx.ellipse(e.x, by + e.r * 0.15, e.r + wob, e.r * 0.9, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = e.flash > 0 ? "#ffffff" : "#ffd54f";
+          ctx.beginPath(); ctx.ellipse(e.x, by, e.r - 3 + wob, e.r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.5)";
+          ctx.beginPath(); ctx.ellipse(e.x - e.r * 0.35, by - e.r * 0.3, e.r * 0.22, e.r * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#3a2a00";
+          ctx.beginPath(); ctx.arc(e.x - e.r * 0.3, by - e.r * 0.05, 4, 0, Math.PI * 2); ctx.arc(e.x + e.r * 0.3, by - e.r * 0.05, 4, 0, Math.PI * 2); ctx.fill();
           continue;
         }
         // 影
