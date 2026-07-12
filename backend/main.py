@@ -324,7 +324,12 @@ def _parse_floor(floor_id: str) -> int:
     return int(digits) if digits else 1
 
 
-def generate_spell(profile: Optional[PlayerProfile], floor_num: int, force_type: Optional[str] = None) -> dict:
+def generate_spell(
+    profile: Optional[PlayerProfile],
+    floor_num: int,
+    force_type: Optional[str] = None,
+    target_difficulty: Optional[int] = None,
+) -> dict:
     if profile:
         vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(
             profile.avg_volume, profile.avg_volume
@@ -347,7 +352,7 @@ def generate_spell(profile: Optional[PlayerProfile], floor_num: int, force_type:
 - プレイヤーの傾向に合わせる：苦手を少しだけ克服させ、得意が活きる内容・難易度にする（傾向不明なら標準）
 - フロアが進むほど難しく（長め・発音難）
 - 声に出して詠唱したくなる、厨二病で格好いい日本語の呪文（1〜2文・40字以内目安）
-- difficulty は 1〜5（フロア{floor_num}相当）、spell_type は {("必ず「" + force_type + "」に固定") if force_type else (("/".join(SPELL_TYPES)) + " のいずれか")}
+- difficulty は {("必ず " + str(target_difficulty) + "（1〜5）") if target_difficulty else "1〜5（フロア" + str(floor_num) + "相当）"}、spell_type は {("必ず「" + force_type + "」に固定") if force_type else (("/".join(SPELL_TYPES)) + " のいずれか")}
 - expected_length_sec は詠唱想定秒数（1.5〜6.0）
 
 JSON で spell_text, difficulty, spell_type, expected_length_sec を返せ。"""
@@ -363,9 +368,10 @@ JSON で spell_text, difficulty, spell_type, expected_length_sec を返せ。"""
         )
         data = json.loads(response.text)
         stype = force_type if force_type in SPELL_TYPES else (data.get("spell_type") if data.get("spell_type") in SPELL_TYPES else "fire")
+        diff = target_difficulty if target_difficulty else int(data.get("difficulty", 2))
         return {
             "spell_text": str(data.get("spell_text") or FALLBACK_SPELL["spell_text"]).strip(),
-            "difficulty": max(1, min(5, int(data.get("difficulty", 2)))),
+            "difficulty": max(1, min(5, diff)),
             "spell_type": stype,
             "expected_length_sec": round(max(1.0, min(8.0, float(data.get("expected_length_sec", 3.0)))), 1),
         }
@@ -386,19 +392,118 @@ async def generate_spell_endpoint(req: GenerateSpellRequest):
     return spell
 
 
+# ===== 適応型AIゲームマスター（function calling エージェント・#81）=====
+# 単発生成ではなく「観測→ツールで次ラウンドの方針を判断」する。
+# GMが plan_round ツールを自分で呼び、難易度・重点属性・言い方のお題・理由を決める。
+_DELIVERY_KEYS = list(DELIVERY_STYLES.keys())
+
+PLAN_ROUND_TOOL = types.Tool(function_declarations=[types.FunctionDeclaration(
+    name="plan_round",
+    description="観測したプレイヤーの傾向をふまえ、次ラウンドの出題方針を決める",
+    parameters={
+        "type": "object",
+        "properties": {
+            "difficulty": {"type": "integer", "description": "1〜5。易しすぎ/難しすぎを避け、成長できる“フロー領域”を狙う"},
+            "element_focus": {"type": "string", "enum": SPELL_TYPES, "description": "3択に必ず含める重点属性（苦手克服 or 得意伸長）"},
+            "delivery_style": {"type": "string", "enum": _DELIVERY_KEYS, "description": "言い方のお題（前回までと変化をつける）"},
+            "reason": {"type": "string", "description": "なぜこの方針か。プレイヤーの実測を必ず根拠に引用する"},
+            "coaching": {"type": "string", "description": "プレイヤーへの短い励まし/助言（任意・40字以内）"},
+        },
+        "required": ["difficulty", "element_focus", "delivery_style", "reason"],
+    },
+)])
+
+
+def plan_round(profile: Optional[PlayerProfile], floor_num: int) -> Optional[dict]:
+    """GMエージェントが次ラウンドの方針を function calling で決める。失敗時 None（=従来のランダム出題にフォールバック）。"""
+    if profile:
+        vol_ja = {"loud": "大声", "normal": "普通の声", "quiet": "小声"}.get(profile.avg_volume, profile.avg_volume)
+        obs = (
+            f"- 平均一致率: {profile.avg_match_rate:.0%}\n"
+            f"- 平均声量: {vol_ja}\n"
+            f"- 得意: {profile.strong_pattern or '不明'}\n"
+            f"- 苦手: {profile.weak_pattern or '不明'}"
+        )
+    else:
+        obs = "（初回・傾向データなし）"
+
+    prompt = f"""あなたはプレイヤーを見守る適応型AIゲームマスター（魔導書の精霊）。
+直近の観測から、次フロア{floor_num}の出題方針を plan_round ツールで決めよ。
+
+観測:
+{obs}
+
+指針:
+- 苦手を少しだけ克服させ、得意も活かす。易しすぎ/難しすぎを避ける（フロー領域）
+- delivery_style（言い方のお題）は変化をつけ、表現の幅を広げさせる
+- フロアが上がるほど挑戦的に
+- reason にはプレイヤーの実測を必ず引用する
+必ず plan_round を1回だけ呼ぶこと。"""
+    try:
+        res = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                tools=[PLAN_ROUND_TOOL],
+                tool_config=types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(mode="ANY")
+                ),
+            ),
+        )
+        for c in (res.candidates or []):
+            for p in (c.content.parts or []):
+                fc = getattr(p, "function_call", None)
+                if fc and fc.name == "plan_round":
+                    a = dict(fc.args)
+                    el = a.get("element_focus")
+                    ds = a.get("delivery_style")
+                    return {
+                        "difficulty": max(1, min(5, int(a.get("difficulty", 2)))),
+                        "element_focus": el if el in SPELL_TYPES else random.choice(SPELL_TYPES),
+                        "delivery_style": ds if ds in DELIVERY_STYLES else random.choice(_DELIVERY_KEYS),
+                        "reason": str(a.get("reason") or "").strip()[:120],
+                        "coaching": str(a.get("coaching") or "").strip()[:60],
+                    }
+    except Exception as e:
+        logger.warning(f"plan_round error: {e}")
+    return None
+
+
 @app.post("/generate-spell-choices")
 async def generate_spell_choices_endpoint(req: GenerateSpellRequest):
-    """3択用に、属性の異なる呪文を3つ生成（並列）。#74 アーチャー伝説風。"""
+    """GMエージェントが観測→plan_roundツールで方針を決め、その方針に沿って3択を生成（#81）。
+    エージェントが落ちても従来のランダム出題にフォールバックする。#74 アーチャー伝説風。"""
     t0 = time.time()
     floor_num = _parse_floor(req.floor_id)
-    types3 = random.sample(SPELL_TYPES, 3)  # 6属性から3つ重複なし
     loop = asyncio.get_event_loop()
+
+    # 1) GMエージェントに次ラウンドの方針を決めさせる（観測→ツール呼び出し）。
+    #    フロア1は適応する履歴が無い＆初回ロードを速く保つためエージェントを回さない。
+    plan = None
+    if floor_num >= 2:
+        plan = await loop.run_in_executor(None, lambda: plan_round(req.player_profile, floor_num))
+
+    if plan:
+        focus = plan["element_focus"]
+        others = random.sample([t for t in SPELL_TYPES if t != focus], 2)
+        types3 = [focus] + others
+        random.shuffle(types3)
+        target_diff = plan["difficulty"]
+    else:
+        types3 = random.sample(SPELL_TYPES, 3)  # フォールバック：6属性から3つ
+        target_diff = None
+
+    # 2) 方針（重点属性＋難易度）に沿って3択を並列生成
     spells = await asyncio.gather(*[
-        loop.run_in_executor(None, (lambda ft: lambda: generate_spell(req.player_profile, floor_num, force_type=ft))(t))
+        loop.run_in_executor(
+            None,
+            (lambda ft: lambda: generate_spell(req.player_profile, floor_num, force_type=ft, target_difficulty=target_diff))(t),
+        )
         for t in types3
     ])
-    logger.info(f"[timing] generate-spell-choices={time.time()-t0:.2f}s floor={floor_num}")
-    return {"spells": spells}
+    logger.info(f"[timing] generate-spell-choices={time.time()-t0:.2f}s floor={floor_num} agent={'ai' if plan else 'fallback'}")
+    # agent ブロックに判断（お題・重点属性・理由・コーチング）を載せる（#82で可視化）
+    return {"spells": spells, "agent": plan}
 
 
 # ===== /result（リザルト診断）=====
