@@ -21,6 +21,7 @@ import Tutorial from "@/components/Tutorial";
 import { moodFromMatchRate } from "@/components/PixelGrimoire";
 import { sfx } from "@/lib/sfx";
 import { setMock, isMock } from "@/lib/api";
+import { playBgm, setBgmMuted, unlockBgm, type BgmTrack } from "@/lib/bgm";
 import { chantStyle } from "@/lib/chantStyle";
 import { APP_VERSION } from "@/lib/version";
 
@@ -40,11 +41,33 @@ export default function Home() {
   const [muted, setMuted] = useState(false); // SE ミュート（初期値は localStorage から同期）
   const [mockMode, setMockMode] = useState(false); // 声なしテスト用モック
   const [showTutorial, setShowTutorial] = useState(false); // 操作チュートリアル
+  const [bossActive, setBossActive] = useState(false); // ボス戦中か（BGM切替用・#BGM）
 
   useEffect(() => {
-    setMuted(sfx.isMuted());
+    const m = sfx.isMuted();
+    setMuted(m);
+    setBgmMuted(m);
     setMockMode(isMock());
+    // 自動再生ポリシー対策：初回のユーザー操作でBGMを解禁
+    const unlock = () => unlockBgm();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
   }, []);
+
+  // phase/勝敗/ボスに応じてBGMを自動切替（title→battle→boss→victory/defeat）
+  useEffect(() => {
+    const p = state.phase;
+    let track: BgmTrack;
+    if (p === "title") track = "title";
+    else if (p === "finishing" || p === "gameResult") track = state.outcome === "victory" ? "victory" : "defeat";
+    else if (p === "survival") track = bossActive ? "boss" : "battle";
+    else track = state.survivalStarted ? "battle" : "title"; // 詠唱パート（初回=タイトル曲/以降=戦闘曲を継続）
+    playBgm(track);
+  }, [state.phase, state.outcome, state.survivalStarted, bossActive]);
 
   // デバッグ装備：単体属性 or 全部（切替で属性ごとに単独で見られる）
   const debugWeapons = useMemo<Weapon[]>(() => {
@@ -270,7 +293,7 @@ export default function Home() {
   return (
     <main style={{ maxWidth: 560, margin: "0 auto", padding: 16, textAlign: "center" }}>
       <button
-        onClick={() => setMuted(sfx.toggleMute())}
+        onClick={() => { const m = sfx.toggleMute(); setMuted(m); setBgmMuted(m); }}
         aria-label={muted ? "効果音をオン" : "効果音をオフ"}
         title={muted ? "効果音: OFF" : "効果音: ON"}
         style={muteBtn}
@@ -287,12 +310,12 @@ export default function Home() {
 
       {state.phase === "title" && (
         <>
-          <TitleScreen onStart={() => { setMock(false); setMockMode(false); start(); }} />
+          <TitleScreen onStart={() => { setBossActive(false); setMock(false); setMockMode(false); start(); }} />
           <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 4 }}>
             <button style={titleSubBtn} onClick={() => setShowTutorial(true)}>
               🎮 遊びかた
             </button>
-            <button style={titleSubBtn} onClick={() => { setMock(true); setMockMode(true); start(); }}>
+            <button style={titleSubBtn} onClick={() => { setBossActive(false); setMock(true); setMockMode(true); start(); }}>
               🔇 声なしで遊ぶ
             </button>
           </div>
@@ -319,6 +342,7 @@ export default function Home() {
               else sfx.playLose();
               finish(outcome);
             }}
+            onBossStart={() => setBossActive(true)}
           />
           {isChant && (
             <div style={overlay}>
@@ -354,7 +378,7 @@ export default function Home() {
           <ResultScreen
             key={state.result.session_id}
             result={state.result}
-            onRestart={reset}
+            onRestart={() => { setBossActive(false); reset(); }}
             bestRecordingUrl={state.recordings[state.result.best_floor.floor_id]}
           />
         </>

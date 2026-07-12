@@ -22,6 +22,7 @@ export interface SurvivalModeProps {
   paused: boolean;
   onLevelUp: (nextLevel: number) => void;
   onFinish: (outcome: "victory" | "defeat") => void;
+  onBossStart?: () => void; // 最終ボス出現時（BGM切替用・#BGM）
   debug?: boolean;
 }
 
@@ -153,6 +154,7 @@ export default function SurvivalMode({
   paused,
   onLevelUp,
   onFinish,
+  onBossStart,
   debug = false,
 }: SurvivalModeProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -179,6 +181,7 @@ export default function SurvivalMode({
   const durRef = useRef(durationSec);
   const onLevelUpRef = useRef(onLevelUp);
   const onFinishRef = useRef(onFinish);
+  const onBossStartRef = useRef(onBossStart);
   const debugRef = useRef(debug);
   const prevLevel = useRef(level);
 
@@ -189,6 +192,7 @@ export default function SurvivalMode({
   useEffect(() => { durRef.current = durationSec; }, [durationSec]);
   useEffect(() => { onLevelUpRef.current = onLevelUp; }, [onLevelUp]);
   useEffect(() => { onFinishRef.current = onFinish; }, [onFinish]);
+  useEffect(() => { onBossStartRef.current = onBossStart; }, [onBossStart]);
 
   // 新ラウンド開始（レベル上昇）でワールドをリセット＝全回復・再配置・敵掃除（#79：装備数と切り離す）
   useEffect(() => {
@@ -386,6 +390,7 @@ export default function SurvivalMode({
           w.bossAlert = 2.6; // 警告バナー表示秒数
           w.shake = 10; w.flash = 1; w.hurt = 0;
           spawnBoss(w);
+          onBossStartRef.current?.(); // BGMをボス曲へ切替（#BGM）
         }
       }
 
